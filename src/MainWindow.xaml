@@ -1,0 +1,90 @@
+<Window x:Class="DiskStudio.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Disk Studio Suite" Width="1440" Height="920" MinWidth="1060" MinHeight="660"
+        WindowStartupLocation="CenterScreen" Icon="Assets/app.ico">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="236"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Navegación -->
+        <DockPanel Grid.Column="0" Margin="10,6,10,12" LastChildFill="False">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6,0,22">
+                <Image Source="Assets/logo-512.png" Width="40" Height="40" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Disk Studio Suite" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock Text="Discos, copias y clonado" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Top" x:Name="Nav">
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE80F;" Content="Discos" x:Name="NavDisks" IsChecked="True" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE8B7;" Content="Explorador" x:Name="NavExplorer" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE8C8;" Content="Transferencias" x:Name="NavTransfers" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE895;" Content="Sincronizar" x:Name="NavSync" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE7C4;" Content="Clonar e imágenes" x:Name="NavClone" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xEDA2;" Content="Formatear" x:Name="NavFormat" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE9F5;" Content="Herramientas" x:Name="NavTools" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xF0E3;" Content="Tareas automáticas" x:Name="NavTasks" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xEA37;" Content="Registro" x:Name="NavLog" Checked="OnNav"/>
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Bottom">
+                <!-- Mini estado de la cola -->
+                <Border x:Name="QueueMini" Style="{StaticResource SubtleCard}" Margin="0,0,0,10" Cursor="Hand" Visibility="Collapsed"
+                        MouseLeftButtonUp="OnQueueMini">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8C8;" Style="{StaticResource Icon}" FontSize="13" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"/>
+                            <TextBlock x:Name="QueueMiniTitle" Margin="8,0,0,0" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                       Width="160" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </StackPanel>
+                        <ProgressBar x:Name="QueueMiniBar" Margin="0,8,0,4" Maximum="1" Height="4"/>
+                        <TextBlock x:Name="QueueMiniText" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Border>
+                <Button x:Name="AdminButton" Style="{StaticResource ToolButton}" Tag="&#xE7EF;" Content="Ejecutar como admin"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OnAdmin" Margin="0,0,0,2"
+                        ToolTip="Necesario para SMART completo, imágenes de disco, clonado sector a sector y formateo"/>
+                <TextBlock x:Name="AdminBadge" Visibility="Collapsed" Margin="12,4,0,8" FontSize="12" Foreground="{StaticResource GoodBrush}">
+                    <Run FontFamily="{StaticResource IconFont}" Text="&#xEA18;"/> <Run Text=" Modo administrador"/>
+                </TextBlock>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE713;" Content="Ajustes" x:Name="NavSettings" Checked="OnNav"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Contenido -->
+        <Border Grid.Column="1" CornerRadius="12,0,0,0" BorderThickness="0"
+                Background="{DynamicResource LayerFillColorDefaultBrush}">
+            <ContentControl x:Name="Host" Focusable="False"/>
+        </Border>
+
+        <!-- Notificaciones -->
+        <StackPanel x:Name="Toasts" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20" Width="340"/>
+
+        <!-- Capa de diálogos -->
+        <Grid x:Name="DialogLayer" Grid.ColumnSpan="2" Visibility="Collapsed" Background="#66000000">
+            <Border x:Name="DialogCard" Style="{StaticResource Card}" Padding="0" MinWidth="420" MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="40" ShadowDepth="8" Opacity="0.35"/>
+                </Border.Effect>
+                <StackPanel>
+                    <StackPanel Margin="24,22,24,18">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <TextBlock x:Name="DialogIcon" Style="{StaticResource Icon}" FontSize="20" Margin="0,0,12,0"/>
+                            <TextBlock x:Name="DialogTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" MaxWidth="540" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        </StackPanel>
+                        <TextBlock x:Name="DialogText" TextWrapping="Wrap" FontSize="14" Foreground="{DynamicResource TextFillColorPrimaryBrush}" LineHeight="21"/>
+                        <ContentControl x:Name="DialogExtra" Margin="0,12,0,0" Focusable="False"/>
+                    </StackPanel>
+                    <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="0,0,10,10" Padding="24,16">
+                        <UniformGrid x:Name="DialogButtons" Rows="1" HorizontalAlignment="Stretch"/>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

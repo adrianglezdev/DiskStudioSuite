@@ -1,0 +1,69 @@
+name: Release
+
+# Se ejecuta al subir una etiqueta de versión, p. ej.:  git tag v0.1.0 && git push origin v0.1.0
+# Las versiones 0.x se publican como «pre-release» (en pruebas).
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión (sin la «v»), p. ej. 0.1.1'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Versión
+        id: ver
+        shell: pwsh
+        run: |
+          $v = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.version }}' } else { '${{ github.ref_name }}'.TrimStart('v') }
+          if ($v -notmatch '^\d+\.\d+\.\d+') { throw "Versión no válida: $v" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+          "prerelease=$(if ($v.StartsWith('0.') -or $v.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+      - name: Pruebas de los motores
+        run: dotnet run --project tests -c Release
+
+      - name: Publicar ejecutable único
+        shell: pwsh
+        run: |
+          dotnet publish src/DiskStudioSuite.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+            -p:Version=${{ steps.ver.outputs.version }} -o dist
+          Get-ChildItem dist -Exclude DiskStudioSuite.exe | Remove-Item -Recurse -Force
+          $h = (Get-FileHash dist/DiskStudioSuite.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  DiskStudioSuite.exe" | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+
+      - name: Crear la release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.ver.outputs.tag }}'
+          $notes = @"
+          ## Disk Studio Suite $tag
+
+          Descarga **DiskStudioSuite.exe**: un único archivo portable para Windows 10/11 de 64 bits, sin instalación.
+
+          > Versión en pruebas: haz copia de seguridad antes de clonar, convertir o formatear discos.
+
+          Comprueba la descarga con el SHA-256 de **SHA256SUMS.txt**.
+
+          > El ejecutable no está firmado: si Windows SmartScreen avisa, pulsa *Más información → Ejecutar de todas formas*.
+          "@
+          $extra = @()
+          if ('${{ steps.ver.outputs.prerelease }}' -eq 'true') { $extra += '--prerelease' }
+          gh release create $tag dist/DiskStudioSuite.exe dist/SHA256SUMS.txt --title "Disk Studio Suite $tag" --notes $notes --generate-notes --target ${{ github.sha }} @extra

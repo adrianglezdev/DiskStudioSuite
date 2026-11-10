@@ -1,0 +1,29 @@
+# Compilación
+bin/
+obj/
+dist/
+publish/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+TestResults/
+
+# Versión antigua (WinForms) que no forma parte del proyecto
+legacy/
+
+# Datos temporales y de pruebas
+*.log
+*.tmp
+*.img
+*.img.gz
+*.vhd
+*.vhdx
+*.dss-part
+docs/marca/vista-*.png
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store

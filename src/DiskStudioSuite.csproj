@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>DiskStudio</RootNamespace>
+    <AssemblyName>DiskStudioSuite</AssemblyName>
+    <!-- La versión se puede sobrescribir al publicar: dotnet publish -p:Version=0.2.0 -->
+    <Version>0.1.0</Version>
+    <Product>Disk Studio Suite</Product>
+    <AssemblyTitle>Disk Studio Suite</AssemblyTitle>
+    <Description>Gestor de discos para Windows: copias, sincronización, clonado, imágenes, formateo y salud de discos.</Description>
+    <Copyright>© 2026 AdrianGlezDev</Copyright>
+    <Authors>AdrianGlezDev</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/adrianglezdev/DiskStudioSuite</RepositoryUrl>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <NoWarn>$(NoWarn);WPF0001;CA1416;CS8632</NoWarn>
+    <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <Deterministic>true</Deterministic>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\logo-512.png" />
+    <InternalsVisibleTo Include="EngineTests" />
+  </ItemGroup>
+
+</Project>
