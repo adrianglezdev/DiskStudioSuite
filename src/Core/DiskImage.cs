@@ -28,12 +28,14 @@ public static class DiskImage
             Stream outS = compress ? new GZipStream(fout, CompressionLevel.Fastest, true) : fout;
             var buf = new byte[Chunk];
             long bad = 0;
+            var blocks = new ulong[(len + Chunk - 1) / Chunk];
             for (long off = 0; off < len; off += Chunk)
             {
                 ctx.Check();
                 int n = (int)Math.Min(Chunk, len - off);
                 if (!ReadAt(src, off, buf, n)) { bad++; Array.Clear(buf, 0, n); ctx.Fail($"Sector {off / 512}", "Error de lectura (rellenado con ceros)"); }
                 sha.TransformBlock(buf, 0, n, null, 0);
+                blocks[off / Chunk] = IncrementalImage.HashBlock(buf.AsSpan(0, n));
                 outS.Write(buf, 0, n);
                 ctx.AddBytes(n);
                 ctx.SetCurrent($"Leyendo {Fmt.Size(off)} de {Fmt.Size(len)}");
@@ -42,6 +44,7 @@ public static class DiskImage
             if (compress) outS.Dispose();
             string hash = Convert.ToHexString(sha.Hash!).ToLowerInvariant();
             File.WriteAllText(file + ".sha256", $"{hash} *{Path.GetFileName(file)}  (datos sin comprimir, {len} bytes, {disk.Title})\n");
+            IncrementalImage.SaveBlocksForFull(file, len, blocks);
             Log.Ok($"Imagen creada: {file} · SHA-256 {hash}" + (bad > 0 ? $" · {bad} bloques ilegibles" : ""));
         })
     };
@@ -54,13 +57,16 @@ public static class DiskImage
         Glyph = Icons.Download,
         Work = ctx => Task.Run(() =>
         {
-            bool gz = file.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
-            using var fin = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, Chunk);
-            Stream src = gz ? new GZipStream(fin, CompressionMode.Decompress) : fin;
-            long total = gz ? -1 : fin.Length;
-            WriteToDisk(ctx, target, src, total);
+            ctx.SetCurrent("Abriendo la imagen…");
+            using var src = OpenImage(file, out long total, out var cleanup);
+            try { WriteToDisk(ctx, target, src, total); }
+            finally { cleanup(); }
         })
     };
+
+    /// <summary>Abre cualquier imagen admitida (.img, .img.gz, .vhd, .vhdx, .iso o incremental) como datos en bruto.</summary>
+    public static Stream OpenImage(string file, out long length, out Action cleanup) =>
+        IncrementalImage.IsIncremental(file) ? IncrementalImage.OpenChain(file, out length, out cleanup) : VirtualDisk.OpenSource(file, out length, out cleanup);
 
     public static TransferJob CloneDiskJob(PhysicalDisk source, PhysicalDisk target) => new()
     {
@@ -133,11 +139,9 @@ public static class DiskImage
         Glyph = Icons.Check,
         Work = ctx => Task.Run(() =>
         {
-            bool gz = file.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
-            using var fin = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, Chunk);
-            Stream img = gz ? new GZipStream(fin, CompressionMode.Decompress) : fin;
+            using var img = OpenImage(file, out long imgLen, out var cleanup);
             using var dev = OpenStream(disk.Device, false, out long len);
-            ctx.SetTotal(gz ? len : Math.Min(len, fin.Length));
+            ctx.SetTotal(Math.Min(len, imgLen));
             var a = new byte[Chunk]; var b = new byte[Chunk];
             long off = 0, diffs = 0;
             while (true)
@@ -151,6 +155,7 @@ public static class DiskImage
                 off += m; ctx.AddBytes(m);
                 ctx.SetCurrent($"Comparando {Fmt.Size(off)}");
             }
+            cleanup();
             if (diffs == 0) Log.Ok("La imagen coincide exactamente con el disco.");
             else Log.Warn($"{diffs} bloques distintos entre imagen y disco.");
         })

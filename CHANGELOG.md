@@ -1,0 +1,45 @@
+# Novedades
+
+Todas las versiones de Disk Studio Suite. El flujo de publicación usa la sección de cada versión como texto de su *release*.
+
+## [0.2.0] - 2026-11-11
+
+Segunda versión en pruebas. Añade el editor de particiones, el USB de arranque, la vigilancia en segundo plano, las copias programadas con versiones y la interfaz en inglés.
+
+### Nuevas secciones
+- **Particiones**: editor completo de particiones. Permite crear, eliminar, reducir, ampliar y dividir particiones, cambiar la letra o el nombre, marcar la partición activa (MBR) e inicializar discos vacíos como GPT o MBR. Antes de cada cambio guarda una copia de la tabla de particiones. Las particiones que Windows necesita para arrancar no se pueden eliminar.
+- **USB de arranque**: crea un pendrive desde una ISO, como Rufus. Tiene tres modos: *UEFI + BIOS (MBR)*, *UEFI (GPT)* e *Imagen DD* para las ISO híbridas de Linux. Analiza la ISO y recomienda el modo adecuado. Si el `install.wim` de Windows pasa de 4 GB, lo divide solo para que quepa en FAT32.
+
+### Clonar e imágenes
+- **Imágenes incrementales** (`.dssinc`): tras una imagen completa, solo se guardan los bloques que han cambiado. Al restaurar, se combina sola toda la cadena hasta la fecha que elijas.
+- **Montar imágenes** como una unidad más para sacar archivos sin restaurar nada (ISO, VHD, VHDX e `.img`), en solo lectura si quieres.
+- **Convertir imágenes** entre `.img`, `.img.gz`, `.vhd` y `.vhdx`, o de una cadena incremental a una imagen completa.
+- Restaurar y verificar ahora también admiten VHD, VHDX e imágenes incrementales.
+- Al clonar avisa si alguna unidad del disco de origen está cifrada con BitLocker.
+
+### Herramientas
+- **Capacidad real**: detecta pendrives y tarjetas falsos o dañados. Escribe datos de prueba en todo el espacio libre y los vuelve a leer sin la caché de Windows, como H2testw.
+- **¿Por qué no puedo expulsarlo?**: muestra qué programas tienen archivos abiertos en una unidad y permite cerrarlos. Al expulsar un disco desde la app, avisa si algo lo está usando.
+- **Comprobar y reparar**: busca y corrige errores del sistema de archivos con `chkdsk`. En la unidad de Windows, la reparación queda programada para el siguiente reinicio. También optimiza la unidad: TRIM en SSD y desfragmentación en discos duros.
+- **BitLocker**: estado del cifrado de cada unidad. Permite desbloquearla con contraseña o clave de recuperación, y suspender, reanudar o bloquear la protección.
+
+### Copias y tareas
+- **Copias programadas**: cada cierto número de horas, todos los días o algunos días de la semana. Si el equipo estaba apagado a la hora prevista, se hacen al abrir la app.
+- **Copias por versiones**: cada ejecución crea una carpeta con la fecha. Los archivos sin cambios se enlazan con la versión anterior (enlaces duros de NTFS), así que cada versión solo ocupa lo que cambió. Se conservan las últimas *N*, y cualquier fecha se puede abrir o restaurar.
+
+### Segundo plano y avisos
+- **Icono junto al reloj**: al cerrar la ventana, la app puede seguir funcionando en segundo plano. También puede **iniciarse con Windows**.
+- **Vigilancia de la salud**: avisa si un disco empeora, si aparecen sectores dañados o si supera la temperatura que elijas.
+- **Historial de salud y temperatura** de cada disco, con una gráfica en «Detalles SMART».
+- **Aviso de nueva versión**: comprueba las versiones publicadas en GitHub sin enviar datos del equipo. Se puede desactivar en Ajustes.
+
+### Integración y otros cambios
+- **Interfaz en inglés**: se elige en Ajustes. Por defecto sigue el idioma de Windows.
+- **Menú del Explorador** (opcional): añade al clic derecho «Copiar con…», «Calcular hash con…» y «Analizar espacio con Disk Studio Suite».
+- **Una sola ventana**: si la app ya está abierta, la petición se le pasa a esa ventana en lugar de abrir otra.
+- Nuevos atajos: Ctrl+1 a Ctrl+9 y Ctrl+0 siguen el orden del menú lateral.
+- La sección «Tareas automáticas» pasa a llamarse **Copias y tareas**.
+
+## [0.1.0] - 2026-11-10
+
+Primera versión pública (en pruebas): discos y salud SMART, explorador de doble panel, cola de transferencias, sincronización, clonado e imágenes, MBR ↔ GPT, formateo (FAT32 de más de 32 GB incluido) y herramientas.

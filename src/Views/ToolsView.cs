@@ -11,7 +11,7 @@ using static DiskStudio.Views.UI;
 
 namespace DiskStudio.Views;
 
-public class ToolsView : UserControl, ISnapshotDemo
+public partial class ToolsView : UserControl, ISnapshotDemo
 {
     public async Task Demo(string action)
     {
@@ -33,6 +33,10 @@ public class ToolsView : UserControl, ISnapshotDemo
         ("hash", Icons.Fingerprint, "Hash y verificación", "Calcula y comprueba SHA-256, SHA-1, MD5, CRC32…", Color.FromRgb(0x64, 0x74, 0x71)),
         ("rename", Icons.Rename, "Renombrado masivo", "Renombra muchos archivos con patrones, contadores y fechas.", Color.FromRgb(0x14, 0x5E, 0x4C)),
         ("wipe", Icons.Wipe, "Borrado seguro", "Elimina archivos de forma irrecuperable o limpia el espacio libre.", Color.FromRgb(220, 38, 38)),
+        ("capacity", Icons.Shield, "Capacidad real", "Detecta pendrives y tarjetas falsos o dañados escribiendo y leyendo todo su espacio.", Color.FromRgb(0x1B, 0xB8, 0x98)),
+        ("locks", Icons.Eject, "¿Por qué no puedo expulsarlo?", "Muestra qué programas están usando una unidad y permite cerrarlos.", Color.FromRgb(0x64, 0x74, 0x71)),
+        ("repair", Icons.Wrench, "Comprobar y reparar", "Busca y corrige errores del sistema de archivos y optimiza la unidad.", Color.FromRgb(0x20, 0x87, 0x6C)),
+        ("bitlocker", Icons.Lock, "BitLocker", "Estado del cifrado de cada unidad: desbloquear, suspender o reanudar.", Color.FromRgb(0x14, 0x5E, 0x4C)),
     ];
 
     public ToolsView() { ShowHub(); }
@@ -73,7 +77,8 @@ public class ToolsView : UserControl, ISnapshotDemo
             body = key switch
             {
                 "space" => SpaceTool(), "dups" => DupsTool(), "search" => SearchTool(), "bench" => BenchTool(),
-                "hash" => HashTool(), "rename" => RenameTool(), _ => WipeTool()
+                "hash" => HashTool(), "rename" => RenameTool(), "capacity" => CapacityTool(), "locks" => LocksTool(),
+                "repair" => RepairTool(), "bitlocker" => BitLockerTool(), _ => WipeTool()
             };
             cache[key] = body;
         }
@@ -375,7 +380,7 @@ public class ToolsView : UserControl, ISnapshotDemo
             {
                 await Task.Run(() => FileSearch.Run(q, tk, fsi =>
                 {
-                    var it = new FileItem { Name = fsi.Name, FullPath = fsi.FullName, IsDir = fsi is DirectoryInfo, Size = fsi is FileInfo fi ? fi.Length : 0, Modified = fsi.LastWriteTime, Type = Path.GetDirectoryName(fsi.FullName) ?? "" };
+                    var it = new FileItem { Name = fsi.Name, FullPath = fsi.FullName, IsDir = fsi is DirectoryInfo, Size = fsi is FileInfo fi ? fi.Length : 0, Modified = fsi.SafeWriteTime(), Type = Path.GetDirectoryName(fsi.FullName) ?? "" };
                     lock (pending) pending.Add(it);
                     if (results.Count + pending.Count > 20000) cts.Cancel();
                 }, d => where = d));

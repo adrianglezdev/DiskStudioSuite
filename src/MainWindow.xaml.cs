@@ -26,7 +26,22 @@ public partial class MainWindow : Window
         Toast.Requested += ShowToast;
         TransferQueue.StateChanged += UpdateQueueMini;
         AutoTasks.Hook();
-        Loaded += (_, _) => { Navigate("disks"); AppState.Rescan(); if (Environment.GetEnvironmentVariable("DSS_SNAP") is string s) _ = Snapshots(s); };
+        Loaded += (_, _) =>
+        {
+            if (current == null) Navigate("disks");
+            AppState.Rescan();
+            L.Apply(this);
+            if (Environment.GetEnvironmentVariable("DSS_SNAP") is string s) _ = Snapshots(s);
+        };
+        if (L.English)
+        {
+            Title = L.T(Title);
+            var lt = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+            lt.Tick += (_, _) => { if (!IsVisible) return; if (Host.Content is DependencyObject d) L.Apply(d); if (DialogLayer.Visibility == Visibility.Visible) L.Apply(DialogCard); L.Apply(QueueMini); };
+            lt.Start();
+        }
+        DiskMonitor.Alert += (title, text, severe) => Toast.Show(title, text, severe ? Icons.Error : Icons.Warning);
+        SingleInstance.ArgsReceived += HandleArgs;
         PreviewKeyDown += OnKey;
         Closing += OnClosing;
     }
@@ -52,6 +67,8 @@ public partial class MainWindow : Window
     static readonly Dictionary<string, Func<FrameworkElement>> factories = new()
     {
         ["disks"] = () => new DisksView(),
+        ["partitions"] = () => new PartitionsView(),
+        ["boot"] = () => new BootUsbView(),
         ["explorer"] = () => new ExplorerView(),
         ["transfers"] = () => new TransfersView(),
         ["sync"] = () => new SyncView(),
@@ -65,7 +82,7 @@ public partial class MainWindow : Window
 
     RadioButton NavFor(string key) => key switch
     {
-        "disks" => NavDisks, "explorer" => NavExplorer, "transfers" => NavTransfers, "sync" => NavSync, "clone" => NavClone,
+        "disks" => NavDisks, "partitions" => NavPartitions, "boot" => NavBoot, "explorer" => NavExplorer, "transfers" => NavTransfers, "sync" => NavSync, "clone" => NavClone,
         "format" => NavFormat, "tools" => NavTools, "tasks" => NavTasks, "log" => NavLog, "settings" => NavSettings, _ => null
     };
 
@@ -85,6 +102,7 @@ public partial class MainWindow : Window
             if (nav != null) nav.IsChecked = true;
             navigating = false;
             Host.Content = page;
+            L.Apply(page);
             page.Opacity = 0;
             var tt = new TranslateTransform(0, 12);
             page.RenderTransform = tt;
@@ -100,7 +118,7 @@ public partial class MainWindow : Window
         if (navigating || !IsLoaded) return;
         string key = sender switch
         {
-            _ when sender == NavDisks => "disks", _ when sender == NavExplorer => "explorer", _ when sender == NavTransfers => "transfers",
+            _ when sender == NavDisks => "disks", _ when sender == NavPartitions => "partitions", _ when sender == NavBoot => "boot", _ when sender == NavExplorer => "explorer", _ when sender == NavTransfers => "transfers",
             _ when sender == NavSync => "sync", _ when sender == NavClone => "clone", _ when sender == NavFormat => "format", _ when sender == NavTools => "tools",
             _ when sender == NavTasks => "tasks", _ when sender == NavLog => "log", _ => "settings"
         };
@@ -118,8 +136,8 @@ public partial class MainWindow : Window
         {
             string key = e.Key switch
             {
-                Key.D1 => "disks", Key.D2 => "explorer", Key.D3 => "transfers", Key.D4 => "sync", Key.D5 => "clone",
-                Key.D6 => "format", Key.D7 => "tools", Key.D8 => "tasks", Key.D9 => "log", _ => null
+                Key.D1 => "disks", Key.D2 => "partitions", Key.D3 => "explorer", Key.D4 => "transfers", Key.D5 => "sync",
+                Key.D6 => "clone", Key.D7 => "format", Key.D8 => "boot", Key.D9 => "tools", Key.D0 => "tasks", _ => null
             };
             if (key != null) { Navigate(key); e.Handled = true; }
         }
@@ -127,6 +145,14 @@ public partial class MainWindow : Window
 
     async void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (Settings.Current.CloseToTray && !exiting && !forceClose)
+        {
+            e.Cancel = true;
+            if (pages.TryGetValue("explorer", out var ex0)) ((ExplorerView)ex0).SaveState();
+            Settings.Save();
+            HideToTray();
+            return;
+        }
         if (TransferQueue.PendingCount > 0 && !forceClose)
         {
             e.Cancel = true;
@@ -143,7 +169,83 @@ public partial class MainWindow : Window
             Settings.Save();
         }
     }
-    bool forceClose;
+    bool forceClose, exiting;
+
+    // ───────────── Segundo plano ─────────────
+    public void HideToTray()
+    {
+        TrayIcon.Ensure();
+        Hide();
+        if (!Settings.Current.TrayHintShown)
+        {
+            Settings.Current.TrayHintShown = true; Settings.Save();
+            TrayIcon.Current?.Balloon("Disk Studio Suite", L.T("Sigue funcionando en segundo plano: vigila tus discos y hace las copias programadas. Haz clic en el icono para abrirlo."));
+        }
+    }
+
+    public void ShowFromTray()
+    {
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        Topmost = true; Topmost = false;
+    }
+
+    /// <summary>Salir de verdad (desde el icono de la bandeja).</summary>
+    public void ExitApp()
+    {
+        exiting = true;
+        if (!IsVisible) Show();
+        Close();
+    }
+
+    // ───────────── Argumentos (menú del Explorador o segunda instancia) ─────────────
+    readonly List<string> copyBatch = [], hashBatch = [];
+    DispatcherTimer batchTimer;
+
+    public void HandleArgs(string[] args)
+    {
+        string verb = null;
+        bool any = false;
+        foreach (var a in args)
+        {
+            if (a is "--copiar" or "--hash" or "--espacio") { verb = a; continue; }
+            if (a.StartsWith("--")) continue;
+            any = true;
+            switch (verb)
+            {
+                case "--copiar": copyBatch.Add(a); break;
+                case "--hash": hashBatch.Add(a); break;
+                case "--espacio": ShowFromTray(); Navigate<ToolsView>("tools").Open("space", a); break;
+            }
+        }
+        if (copyBatch.Count + hashBatch.Count > 0)
+        {
+            // El Explorador abre una instancia por elemento seleccionado: se agrupan los que llegan juntos
+            batchTimer ??= AppState.Debounce(TimeSpan.FromMilliseconds(700), FlushBatch);
+            batchTimer.Stop(); batchTimer.Start();
+        }
+        else if (!any && !args.Contains("--segundo-plano")) ShowFromTray();
+    }
+
+    async void FlushBatch()
+    {
+        ShowFromTray();
+        if (hashBatch.Count > 0)
+        {
+            var files = hashBatch.Distinct().ToArray(); hashBatch.Clear();
+            Navigate<ToolsView>("tools").Open("hash", System.IO.Path.GetDirectoryName(files[0]), files);
+        }
+        if (copyBatch.Count > 0)
+        {
+            var items = copyBatch.Distinct().ToList(); copyBatch.Clear();
+            string dst = Dialogs.PickFolder(null, L.T("Copiar a…"));
+            if (dst == null) return;
+            if (items.Any(i => FileOps.IsInside(dst, i))) { await Dialogs.Error("Destino no válido", "No puedes copiar una carpeta dentro de sí misma."); return; }
+            TransferQueue.Enqueue(FileOps.CopyJob(items, dst, false));
+            Navigate("transfers");
+        }
+    }
 
     async void OnAdmin(object sender, RoutedEventArgs e)
     {
@@ -170,6 +272,7 @@ public partial class MainWindow : Window
     // ───────────── Notificaciones ─────────────
     void ShowToast(string title, string text, string glyph)
     {
+        if (!IsVisible) { TrayIcon.Current?.Balloon(title, text, glyph is Icons.Error or Icons.Warning); return; }
         var accent = glyph == Icons.Error ? (Brush)FindResource("BadBrush") : glyph == Icons.Warning ? (Brush)FindResource("CautionBrush")
                    : glyph == Icons.Success ? (Brush)FindResource("GoodBrush") : (Brush)FindResource("BrandBrush");
         var card = new Border
@@ -223,13 +326,15 @@ public partial class MainWindow : Window
         await dialogLock.WaitAsync();
         try
         {
-            DialogTitle.Text = title;
-            DialogText.Text = text;
+            DialogTitle.Text = L.T(title);
+            DialogText.Text = L.T(text);
             DialogText.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
             DialogIcon.Text = glyph ?? "";
             DialogIcon.Foreground = glyphBrush ?? (Brush)FindResource("AccentTextFillColorPrimaryBrush");
             DialogIcon.Visibility = glyph == null ? Visibility.Collapsed : Visibility.Visible;
             DialogExtra.Content = extra;
+            if (extra != null) L.Apply(extra);
+            if (!IsVisible) ShowFromTray();
             DialogButtons.Children.Clear();
             DialogButtons.Columns = buttons.Length;
             for (int i = 0; i < buttons.Length; i++)
@@ -237,7 +342,7 @@ public partial class MainWindow : Window
                 int idx = i;
                 var b = new Button
                 {
-                    Content = buttons[i],
+                    Content = L.T(buttons[i]),
                     Margin = new Thickness(i == 0 ? 0 : 8, 0, 0, 0),
                     Style = (Style)FindResource(i == primary ? (danger ? "DangerButton" : "PrimaryButton") : "SecondaryButton"),
                     IsDefault = i == primary

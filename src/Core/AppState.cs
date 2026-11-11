@@ -23,6 +23,16 @@ public class Settings
     public List<string> Favorites { get; set; } = [];
     public string LeftPath { get; set; }
     public string RightPath { get; set; }
+    public string Language { get; set; } = "auto";       // auto | es | en
+    public bool Monitor { get; set; } = true;            // vigilar la salud de los discos
+    public int MonitorMinutes { get; set; } = 15;
+    public int TempLimit { get; set; } = 55;
+    public bool CloseToTray { get; set; }                // al cerrar, seguir en segundo plano
+    public bool StartWithWindows { get; set; }
+    public bool CheckUpdates { get; set; } = true;
+    public DateTime? LastUpdateCheck { get; set; }
+    public bool ExplorerMenu { get; set; }
+    public bool TrayHintShown { get; set; }
 
     static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Disk Studio Suite");
     static string FilePath => Path.Combine(Dir, "settings.json");
@@ -78,6 +88,7 @@ public static class Log
 
     public static void Write(string text, LogKind kind = LogKind.Info)
     {
+        text = L.T(text);
         void add()
         {
             Entries.Insert(0, new LogEntry { Kind = kind, Text = text });
@@ -167,6 +178,7 @@ public static class Toast
         if (!Settings.Current.Notifications) return;
         var d = Application.Current?.Dispatcher;
         if (d == null) return;
+        title = L.T(title); text = L.T(text);
         d.BeginInvoke(() => Requested?.Invoke(title, text, glyph));
     }
 }

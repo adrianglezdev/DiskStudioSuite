@@ -58,14 +58,16 @@ public static class Dialogs
         var sp = new StackPanel();
         var lbl = new TextBlock { Style = (Style)Application.Current.FindResource("Label"), TextWrapping = TextWrapping.Wrap };
         lbl.Inlines.Add("Para confirmar, escribe ");
-        lbl.Inlines.Add(new System.Windows.Documents.Run(phrase) { FontWeight = FontWeights.Bold, Foreground = R("BadBrush") });
+        string shown = L.T(phrase);
+        lbl.Inlines.Add(new System.Windows.Documents.Run(shown) { FontWeight = FontWeights.Bold, Foreground = R("BadBrush") });
         sp.Children.Add(lbl);
         sp.Children.Add(tb);
         while (true)
         {
             int r = await Show(title, text, [yes, "Cancelar"], 0, true, sp, Icons.Warning, R("BadBrush"));
             if (r != 0) return false;
-            if (tb.Text.Trim() == phrase) return true;
+            string typed = tb.Text.Trim();
+            if (typed == phrase || typed == shown) return true;
             tb.Text = "";
         }
     }
@@ -88,8 +90,8 @@ public static class Dialogs
         cell("Nuevo (origen)", 0, 1, true); cell("Existente (destino)", 0, 2, true);
         cell(Fmt.Size(src.Length), 1, 1); cell(Fmt.Size(dst.Length), 1, 2);
         bool newer = src.LastWriteTimeUtc > dst.LastWriteTimeUtc;
-        cell(src.LastWriteTime.ToString("dd/MM/yyyy HH:mm:ss") + (newer ? "  ✓ más reciente" : ""), 2, 1, fg: newer ? R("GoodBrush") : null);
-        cell(dst.LastWriteTime.ToString("dd/MM/yyyy HH:mm:ss") + (!newer ? "  ✓ más reciente" : ""), 2, 2, fg: !newer ? R("GoodBrush") : null);
+        cell(src.SafeWriteTime().ToString("dd/MM/yyyy HH:mm:ss") + (newer ? "  ✓ más reciente" : ""), 2, 1, fg: newer ? R("GoodBrush") : null);
+        cell(dst.SafeWriteTime().ToString("dd/MM/yyyy HH:mm:ss") + (!newer ? "  ✓ más reciente" : ""), 2, 2, fg: !newer ? R("GoodBrush") : null);
         var sp = new StackPanel();
         sp.Children.Add(grid); sp.Children.Add(cb);
         int r = await Show("El archivo ya existe", dst.FullName, ["Reemplazar", "Omitir", "Conservar ambos", "Cancelar"], 0, extra: sp, glyph: Icons.Copy);

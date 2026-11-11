@@ -32,6 +32,9 @@ public static class SpaceAnalyzer
         return node;
     }
 
+    /// <summary>Algunos archivos tienen fechas no válidas (p. ej. copiados de otros sistemas): no deben detener el análisis.</summary>
+    static DateTime SafeTime(FileSystemInfo i) { try { return i.LastWriteTime; } catch (ArgumentOutOfRangeException) { return DateTime.MinValue; } }
+
     static void Walk(SpaceNode n, CancellationToken tk, Action<string, long> progress, ref long counter)
     {
         tk.ThrowIfCancellationRequested();
@@ -42,12 +45,12 @@ public static class SpaceAnalyzer
             {
                 if (e is FileInfo f)
                 {
-                    n.Children.Add(new SpaceNode { Name = f.Name, Path = f.FullName, Size = f.Length, Parent = n, Modified = f.LastWriteTime });
+                    n.Children.Add(new SpaceNode { Name = f.Name, Path = f.FullName, Size = f.Length, Parent = n, Modified = SafeTime(f) });
                     n.Size += f.Length; n.Files++;
                 }
                 else if (e is DirectoryInfo d)
                 {
-                    var c = new SpaceNode { Name = d.Name, Path = d.FullName, IsDir = true, Parent = n, Modified = d.LastWriteTime };
+                    var c = new SpaceNode { Name = d.Name, Path = d.FullName, IsDir = true, Parent = n, Modified = SafeTime(d) };
                     Walk(c, tk, progress, ref counter);
                     n.Children.Add(c);
                     n.Size += c.Size; n.Files += c.Files; n.Folders += c.Folders + 1;
@@ -135,7 +138,7 @@ public static class DuplicateFinder
                 foreach (var full in partial.GroupBy(f => kv.Key <= 65536 ? partial.Key : Hex(Hashing.XxHash(f.FullName, tk))).Where(g => g.Count() > 1))
                 {
                     var g = new DupGroup { Size = kv.Key };
-                    foreach (var f in full.OrderBy(f => f.LastWriteTime)) g.Files.Add(new DupFile { Path = f.FullName, Modified = f.LastWriteTime, Group = g });
+                    foreach (var f in full.OrderBy(f => f.SafeWriteTime())) g.Files.Add(new DupFile { Path = f.FullName, Modified = f.SafeWriteTime(), Group = g });
                     groups.Add(g);
                 }
             int n = Interlocked.Increment(ref done);
@@ -502,8 +505,8 @@ public static class FileSearch
                 if (filter.SkipFile(f)) continue;
                 if (q.MinSize >= 0 && f.Length < q.MinSize) continue;
                 if (q.MaxSize >= 0 && f.Length > q.MaxSize) continue;
-                if (q.After is DateTime a && f.LastWriteTime < a) continue;
-                if (q.Before is DateTime b && f.LastWriteTime > b) continue;
+                if (q.After is DateTime a && f.SafeWriteTime() < a) continue;
+                if (q.Before is DateTime b && f.SafeWriteTime() > b) continue;
                 if (!string.IsNullOrEmpty(q.Text) && !Contains(f, q.Text, tk)) continue;
                 found(f);
             }

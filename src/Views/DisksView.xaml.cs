@@ -100,6 +100,7 @@ public partial class DisksView : UserControl
         Button act(string text, string glyph, Action a) => Btn(text, glyph, (_, _) => a(), "SecondaryButton")
             .Also(b => { b.Padding = new Thickness(12, 6, 12, 6); b.Margin = new Thickness(0, 0, 8, 0); });
         actions.Children.Add(act("Detalles SMART", Icons.Health, () => ShowSmart(d)));
+        actions.Children.Add(act("Particiones", Icons.Layers, () => MainWindow.Instance.Navigate<PartitionsView>("partitions").Prepare(d)));
         actions.Children.Add(act("Crear imagen", Icons.Image, () => MainWindow.Instance.Navigate<CloneView>("clone").Prepare("image", d)));
         actions.Children.Add(act("Clonar disco", Icons.Clone, () => MainWindow.Instance.Navigate<CloneView>("clone").Prepare("disk", d)));
         actions.Children.Add(act("Analizar superficie", Icons.Grid, () => MainWindow.Instance.Navigate<CloneView>("clone").Prepare("surface", d)));
@@ -127,7 +128,7 @@ public partial class DisksView : UserControl
             IconBtn(Icons.FolderOpen, "Abrir en el explorador", (_, _) => MainWindow.Instance.Navigate<ExplorerView>("explorer").Open(v.Root)),
             IconBtn(Icons.Pie, "Analizar espacio", (_, _) => MainWindow.Instance.Navigate<ToolsView>("tools").Open("space", v.Root)),
             IconBtn(Icons.Speed, "Medir velocidad", (_, _) => MainWindow.Instance.Navigate<ToolsView>("tools").Open("bench", v.Root)),
-            v.IsRemovable && !v.IsSystem ? IconBtn(Icons.Eject, "Expulsar de forma segura", (_, _) => Eject(v)) : null);
+            v.IsRemovable && !v.IsSystem ? IconBtn(Icons.Eject, "Expulsar de forma segura", (_, _) => DiskActions.Eject(v)) : null);
         var more = IconBtn(Icons.More, "Más acciones", null);
         more.Click += (_, _) =>
         {
@@ -135,6 +136,11 @@ public partial class DisksView : UserControl
                 ("Abrir en el Explorador de Windows", Icons.External, () => Native.ShowInExplorer(v.Root)),
                 ("Cambiar nombre del volumen…", Icons.Rename, () => Relabel(v)),
                 ("Propiedades de Windows", Icons.Properties, () => Native.ShowProperties(v.Root)),
+                ("-", null, null),
+                ("Comprobar y reparar…", Icons.Wrench, () => MainWindow.Instance.Navigate<ToolsView>("tools").Open("repair", v.Root)),
+                ("¿Qué programas la están usando?", Icons.Eject, () => MainWindow.Instance.Navigate<ToolsView>("tools").Open("locks", v.Root)),
+                ("BitLocker…", Icons.Lock, () => MainWindow.Instance.Navigate<ToolsView>("tools").Open("bitlocker", v.Root)),
+                ("Comprobar capacidad real…", Icons.Shield, () => MainWindow.Instance.Navigate<ToolsView>("tools").Open("capacity", v.Root)),
                 ("-", null, null),
                 ("Limpiar espacio libre (seguro)…", Icons.Wipe, () => WipeFree(v)),
                 ("Formatear…", Icons.Drive, () => MainWindow.Instance.Navigate<FormatView>("format").Prepare(v)));
@@ -145,17 +151,6 @@ public partial class DisksView : UserControl
 
         var row = Columns((Tile(v.Glyph, v.IsSystem ? (Brush)FindResource("BrandBrush") : (Brush)FindResource("BrandSlateBrush"), 36), Auto), (info, Star), (buttons, Auto));
         return new Border { Style = S("SubtleCard"), Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(12, 10, 8, 10), Child = row };
-    }
-
-    async void Eject(VolumeInfo v)
-    {
-        if (TransferQueue.Active != null && (TransferQueue.Active.Subtitle.Contains(v.Root) || TransferQueue.Active.Title.Contains(v.Letter)))
-        { await Dialogs.Info("Disco en uso", "Hay una operación en curso con este disco. Espera a que termine."); return; }
-        try
-        {
-            if (Native.Eject(v.Root)) { Log.Info($"Expulsión solicitada para {v.Letter}"); Toast.Show("Expulsando", $"{v.Letter} {v.Name}. Windows avisará cuando sea seguro retirarlo.", Icons.Eject); }
-        }
-        catch (Exception ex) { await Dialogs.Error("No se pudo expulsar", ex.Message); }
     }
 
     async void Relabel(VolumeInfo v)
@@ -201,6 +196,13 @@ public partial class DisksView : UserControl
         if (d.Wear is int w) kv("Desgaste", w + "%");
         if (d.ReadErrors is long re) kv("Errores de lectura", re.ToString("N0"));
         if (d.WriteErrors is long we) kv("Errores de escritura", we.ToString("N0"));
+        var hist = HealthHistory.Load(d);
+        sp.Children.Add(Row(Text("Historial", "SectionTitle", margin: new Thickness(0, 14, 0, 6)),
+            Text("  ● salud", "Caption", 12).Also(t => t.Foreground = Brushes2.Good), Text("  ● temperatura", "Caption", 12).Also(t => t.Foreground = (Brush)FindResource("BrandBrush"))));
+        var chart = new HistoryChart { Height = 150 };
+        chart.SetData(hist);
+        sp.Children.Add(chart);
+        if (hist.Count > 0) sp.Children.Add(Text($"{hist.Count} mediciones desde el {hist[0].Time:dd/MM/yyyy}" + (hist.LastOrDefault(x => x.Reallocated != null) is { } lr ? $" · sectores reasignados: {lr.Reallocated}" : ""), "Caption", 12, margin: new Thickness(0, 4, 0, 0)));
         if (d.Attributes.Count > 0)
         {
             sp.Children.Add(Text("Atributos SMART", "SectionTitle", margin: new Thickness(0, 14, 0, 6)));

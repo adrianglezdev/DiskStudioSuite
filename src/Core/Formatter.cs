@@ -149,57 +149,66 @@ public static class Formatter
         Glyph = Icons.Drive,
         Work = ctx => Task.Run(() =>
         {
-            if (d.IsSystem || d.IsBoot) throw new InvalidOperationException("No se puede reiniciar el disco del sistema.");
-            var probs = Problems(d.Size, o, d.SectorSize);
-            if (probs.Count > 0) throw new InvalidOperationException(string.Join(" ", probs));
-            var disk = FindDisk(d.Number) ?? throw new IOException("No se encontró el disco " + d.Number);
-
-            if (disk["IsReadOnly"] is true)
-            {
-                ctx.SetCurrent("Quitando el atributo de solo lectura…");
-                Invoke(disk, "SetAttributes", new() { ["IsReadOnly"] = false }, "quitar la protección contra escritura");
-                disk = FindDisk(d.Number);
-            }
-            if (disk["IsOffline"] is true)
-            {
-                ctx.SetCurrent("Poniendo el disco en línea…");
-                Invoke(disk, "Online", [], "poner el disco en línea");
-                disk = FindDisk(d.Number);
-            }
-            if (Convert.ToInt32(disk["PartitionStyle"] ?? 0) != 0)
-            {
-                ctx.SetCurrent("Borrando todas las particiones…");
-                Invoke(disk, "Clear", new() { ["RemoveData"] = true, ["RemoveOEM"] = true, ["ZeroOutEntireDisk"] = false }, "borrar el disco");
-                disk = FindDisk(d.Number);
-            }
-            ctx.SetCurrent($"Creando tabla {o.Table}…");
-            Invoke(disk, "Initialize", new() { ["PartitionStyle"] = (ushort)(o.Table == TableStyle.Gpt ? 2 : 1) }, "inicializar el disco");
-            disk = FindDisk(d.Number);
-
-            ctx.SetCurrent("Creando la partición…");
-            var args = new Dictionary<string, object> { ["UseMaximumSize"] = true, ["AssignDriveLetter"] = true };
-            if (o.Table == TableStyle.Mbr) args["MbrType"] = (ushort)(o.FileSystem == "FAT32" ? 12 : 7);
-            Invoke(disk, "CreatePartition", args, "crear la partición");
-            PartitionTable.RefreshStorageCache();
-
-            string letter = null; long size = 0;
-            for (int i = 0; i < 40 && letter == null; i++)
-            {
-                Thread.Sleep(250);
-                var part = FindDataPartition(d.Number);
-                if (part == null) continue;
-                size = Convert.ToInt64(part["Size"]);
-                char c = Convert.ToChar(part["DriveLetter"] ?? '\0');
-                if (c != '\0') letter = c + ":";
-                else if (i == 20) letter = PartitionTable.AssignLetter(d.Number, Convert.ToInt64(part["Offset"]));
-            }
-            if (letter == null) throw new IOException("La partición se creó pero Windows no le asignó letra.");
-            for (int i = 0; i < 20 && !Directory.Exists(letter + "\\") && !DriveInfo.GetDrives().Any(x => x.Name.StartsWith(letter, StringComparison.OrdinalIgnoreCase)); i++) Thread.Sleep(250);
+            var (letter, size) = Repartition(ctx, d, o, false);
             ctx.SetCurrent($"Formateando {letter} como {o.FileSystem}…");
             FormatLetter(ctx, letter, size, o);
             Log.Ok($"Disco {d.Number} reiniciado: {o.Table} con una partición {o.FileSystem} de {Fmt.Size(size)} en {letter}");
         })
     };
+
+    /// <summary>Borra el disco y crea una única partición con letra (sin formatear). Devuelve la letra y el tamaño.</summary>
+    internal static (string letter, long size) Repartition(JobContext ctx, PhysicalDisk d, FormatOptions o, bool active)
+    {
+        if (d.IsSystem || d.IsBoot) throw new InvalidOperationException("No se puede reiniciar el disco del sistema.");
+        var probs = Problems(d.Size, o, d.SectorSize);
+        if (probs.Count > 0) throw new InvalidOperationException(string.Join(" ", probs));
+        var disk = FindDisk(d.Number) ?? throw new IOException("No se encontró el disco " + d.Number);
+
+        if (disk["IsReadOnly"] is true)
+        {
+            ctx.SetCurrent("Quitando el atributo de solo lectura…");
+            Invoke(disk, "SetAttributes", new() { ["IsReadOnly"] = false }, "quitar la protección contra escritura");
+            disk = FindDisk(d.Number);
+        }
+        if (disk["IsOffline"] is true)
+        {
+            ctx.SetCurrent("Poniendo el disco en línea…");
+            Invoke(disk, "Online", [], "poner el disco en línea");
+            disk = FindDisk(d.Number);
+        }
+        if (Convert.ToInt32(disk["PartitionStyle"] ?? 0) != 0)
+        {
+            ctx.SetCurrent("Borrando todas las particiones…");
+            Invoke(disk, "Clear", new() { ["RemoveData"] = true, ["RemoveOEM"] = true, ["ZeroOutEntireDisk"] = false }, "borrar el disco");
+            disk = FindDisk(d.Number);
+        }
+        ctx.SetCurrent($"Creando tabla {o.Table}…");
+        Invoke(disk, "Initialize", new() { ["PartitionStyle"] = (ushort)(o.Table == TableStyle.Gpt ? 2 : 1) }, "inicializar el disco");
+        disk = FindDisk(d.Number);
+
+        ctx.SetCurrent("Creando la partición…");
+        var args = new Dictionary<string, object> { ["UseMaximumSize"] = true, ["AssignDriveLetter"] = true };
+        if (o.Table == TableStyle.Mbr) { args["MbrType"] = (ushort)(o.FileSystem == "FAT32" ? 12 : 7); if (active) args["IsActive"] = true; }
+        Invoke(disk, "CreatePartition", args, "crear la partición");
+        PartitionTable.RefreshStorageCache();
+
+        string letter = null; long size = 0;
+        for (int i = 0; i < 40 && letter == null; i++)
+        {
+            Thread.Sleep(250);
+            var part = FindDataPartition(d.Number);
+            if (part == null) continue;
+            size = Convert.ToInt64(part["Size"]);
+            char c = Convert.ToChar(part["DriveLetter"] ?? '\0');
+            if (c != '\0') letter = c + ":";
+            else if (i == 20) letter = PartitionTable.AssignLetter(d.Number, Convert.ToInt64(part["Offset"]));
+        }
+        if (letter == null) throw new IOException("La partición se creó pero Windows no le asignó letra.");
+        for (int i = 0; i < 20 && !Directory.Exists(letter + "\\") && !DriveInfo.GetDrives().Any(x => x.Name.StartsWith(letter, StringComparison.OrdinalIgnoreCase)); i++) Thread.Sleep(250);
+        return (letter, size);
+    }
+
+    internal static void FormatPartition(JobContext ctx, string letter, long size, FormatOptions o) => FormatLetter(ctx, letter, size, o);
 
     static ManagementObject FindDisk(int n)
     {

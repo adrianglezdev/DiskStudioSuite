@@ -60,7 +60,7 @@ public static class Native
     {
         try
         {
-            Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas" });
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--reinicio") { UseShellExecute = true, Verb = "runas" });
             Application.Current.Shutdown();
             return true;
         }
@@ -189,6 +189,9 @@ public static class Fmt
     }
 
     public static string Speed(double bps) => Size((long)bps) + "/s";
+
+    /// <summary>Fecha de modificación sin fallar si el archivo tiene una fecha no válida.</summary>
+    public static DateTime SafeWriteTime(this FileSystemInfo i) { try { return i.LastWriteTime; } catch (ArgumentOutOfRangeException) { return DateTime.MinValue; } }
 
     public static string Time(TimeSpan t)
     {

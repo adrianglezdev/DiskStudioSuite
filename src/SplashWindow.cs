@@ -83,7 +83,7 @@ public class SplashWindow : Window
 
         // Nombre y lema
         var title = new TextBlock { Text = "Disk Studio Suite", FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center };
-        var tagline = new TextBlock { Text = "Discos  ·  Copias  ·  Clonado  ·  Formato", FontSize = 13, Foreground = new SolidColorBrush(Brand.Mint), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
+        var tagline = new TextBlock { Text = L.T("Discos  ·  Copias  ·  Clonado  ·  Formato"), FontSize = 13, Foreground = new SolidColorBrush(Brand.Mint), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 312, 0, 0), Opacity = 0, RenderTransform = new TranslateTransform(0, 14) };
         texts.Children.Add(title); texts.Children.Add(tagline);
         root.Children.Add(texts);
@@ -96,7 +96,7 @@ public class SplashWindow : Window
         track.Child = fill;
         root.Children.Add(track);
         status.FontSize = 12; status.Foreground = new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)); status.HorizontalAlignment = HorizontalAlignment.Center;
-        status.VerticalAlignment = VerticalAlignment.Bottom; status.Margin = new Thickness(0, 0, 0, 14); status.Text = messages[0];
+        status.VerticalAlignment = VerticalAlignment.Bottom; status.Margin = new Thickness(0, 0, 0, 14); status.Text = L.T(messages[0]);
         root.Children.Add(status);
         var ver = new TextBlock { Text = "v" + typeof(SplashWindow).Assembly.GetName().Version?.ToString(3), FontSize = 11, Foreground = new SolidColorBrush(Color.FromArgb(110, 255, 255, 255)), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 18, 14) };
         root.Children.Add(ver);
@@ -143,7 +143,7 @@ public class SplashWindow : Window
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(720) };
             t.Tick += (_, _) =>
             {
-                if (++i < messages.Length) status.Text = messages[i];
+                if (++i < messages.Length) status.Text = L.T(messages[i]);
                 else t.Stop();
             };
             t.Start();
@@ -155,7 +155,7 @@ public class SplashWindow : Window
     void OnDisks()
     {
         int n = AppState.Disks.Count;
-        if (n > 0) status.Text = $"{n} discos detectados · {AppState.Volumes.Count(v => v.Ready)} volúmenes";
+        if (n > 0) status.Text = L.T($"{n} discos detectados · {AppState.Volumes.Count(v => v.Ready)} volúmenes");
     }
 
     static UIElement Dots()

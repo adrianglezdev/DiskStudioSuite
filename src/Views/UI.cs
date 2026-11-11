@@ -117,6 +117,16 @@ static class UI
         return g;
     }
 
+    /// <summary>Grupo de botones segmentados (RadioButton con estilo SegmentItem).</summary>
+    public static Border Seg(params UIElement[] items)
+    {
+        var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var i in items) if (i != null) sp.Children.Add(i);
+        var b = new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(2), Child = sp, HorizontalAlignment = HorizontalAlignment.Left };
+        b.SetResourceReference(Border.BackgroundProperty, "SubtleFillColorSecondaryBrush");
+        return b;
+    }
+
     public static GridLength Auto => GridLength.Auto;
     public static GridLength Star => new(1, GridUnitType.Star);
     public static GridLength Px(double v) => new(v);

@@ -53,8 +53,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ steps.ver.outputs.tag }}'
+          $ver = '${{ steps.ver.outputs.version }}'
+          # Novedades de esta versión: su sección de CHANGELOG.md
+          $changes = ''
+          if (Test-Path CHANGELOG.md) {
+            $m = [regex]::Match((Get-Content CHANGELOG.md -Raw -Encoding utf8), "(?ms)^## \[$([regex]::Escape($ver))\][^\n]*\n(.*?)(?=^## \[|\z)")
+            if ($m.Success) { $changes = $m.Groups[1].Value.Trim() }
+          }
           $notes = @"
           ## Disk Studio Suite $tag
+
+          $changes
+
+          ---
 
           Descarga **DiskStudioSuite.exe**: un único archivo portable para Windows 10/11 de 64 bits, sin instalación.
 
@@ -66,4 +77,5 @@ jobs:
           "@
           $extra = @()
           if ('${{ steps.ver.outputs.prerelease }}' -eq 'true') { $extra += '--prerelease' }
-          gh release create $tag dist/DiskStudioSuite.exe dist/SHA256SUMS.txt --title "Disk Studio Suite $tag" --notes $notes --generate-notes --target ${{ github.sha }} @extra
+          $notes | Set-Content release-notes.md -Encoding utf8
+          gh release create $tag dist/DiskStudioSuite.exe dist/SHA256SUMS.txt --title "Disk Studio Suite $tag" --notes-file release-notes.md --target ${{ github.sha }} @extra

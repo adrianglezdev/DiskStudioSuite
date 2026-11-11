@@ -32,8 +32,9 @@ public abstract class Notifier : INotifyPropertyChanged
 /// <summary>Trabajo de la cola (copia, movimiento, clonado, imagen…).</summary>
 public class TransferJob : Notifier
 {
-    public string Title { get; init; } = "";
-    public string Subtitle { get; init; } = "";
+    readonly string title = "", subtitle = "";
+    public string Title { get => title; init => title = L.T(value ?? ""); }
+    public string Subtitle { get => subtitle; init => subtitle = L.T(value ?? ""); }
     public string Glyph { get; init; } = Icons.Copy;
     public Func<JobContext, Task> Work { get; init; }
     public Func<List<string>, TransferJob> RetryFactory { get; init; }
@@ -65,12 +66,12 @@ public class TransferJob : Notifier
     string result = ""; public string Result { get => result; set => Set(ref result, value); }
     bool indeterminate = true; public bool Indeterminate { get => indeterminate; set => Set(ref indeterminate, value); }
 
-    public string StateText => state switch
+    public string StateText => L.T(state switch
     {
         JobState.Queued => "En cola", JobState.Running => "En curso", JobState.Paused => "En pausa",
         JobState.Done => Errors.Count > 0 ? $"Terminado con {Errors.Count} errores" : "Completado",
         JobState.Failed => "Error", JobState.Cancelled => "Cancelado", _ => ""
-    };
+    });
 
     public void Pause() { if (state == JobState.Running) { Gate.Reset(); State = JobState.Paused; } }
     public void Resume() { if (state == JobState.Paused) { Gate.Set(); State = JobState.Running; } }
@@ -101,11 +102,11 @@ public class TransferJob : Notifier
         Progress = total > 0 ? Math.Min(1, (double)done / total) : 0;
         Detail = current;
         double avg = activeSeconds > 0.5 ? done / activeSeconds : 0;
-        string eta = avg > 0 && total > done ? " · quedan " + Fmt.Time(TimeSpan.FromSeconds((total - done) / avg)) : "";
+        string eta = avg > 0 && total > done ? " · " + L.F("quedan {0}", Fmt.Time(TimeSpan.FromSeconds((total - done) / avg))) : "";
         double recent = SpeedHistory.Count > 0 ? SpeedHistory.TakeLast(4).Average() : 0;
         SpeedText = state == JobState.Running && recent > 0 ? Fmt.Speed(recent) + eta : "";
         Stats = total > 0
-            ? $"{Fmt.Size(done)} de {Fmt.Size(total)}" + (filesTotal > 0 ? $" · {filesDone}/{filesTotal} archivos" : "")
+            ? L.F("{0} de {1}", Fmt.Size(done), Fmt.Size(total)) + (filesTotal > 0 ? " · " + L.F("{0}/{1} archivos", filesDone, filesTotal) : "")
             : filesTotal > 0 ? $"{filesDone}/{filesTotal}" : "";
         Raise(nameof(SpeedHistory));
     }
@@ -126,9 +127,11 @@ public class JobContext(TransferJob job)
 
     public void SetTotal(long bytes, long files = 0) { Interlocked.Exchange(ref Job.bytesTotal, bytes); Job.filesTotal = files; }
     public void AddTotal(long bytes) => Interlocked.Add(ref Job.bytesTotal, bytes);
-    public void SetCurrent(string s) => Job.current = s;
+    public void SetCurrent(string s) => Job.current = L.T(s);
     public void FileDone() => Interlocked.Increment(ref Job.filesDone);
     public long BytesDone => Interlocked.Read(ref Job.bytesDone);
+    /// <summary>Empieza a contar el progreso de cero (para trabajos con varias fases).</summary>
+    public void ResetProgress(long total) { Interlocked.Exchange(ref Job.bytesDone, 0); Interlocked.Exchange(ref Job.bytesTotal, total); }
 
     public void AddBytes(long n)
     {
@@ -208,7 +211,7 @@ public static class TransferQueue
                     job.current = "";
                     job.Refresh();
                     job.Progress = 1;
-                    job.Result = $"{Fmt.Size(job.bytesDone)} en {Fmt.Time(DateTime.Now - job.started)}";
+                    job.Result = L.F("{0} en {1}", Fmt.Size(job.bytesDone), Fmt.Time(DateTime.Now - job.started));
                     if (job.Errors.Count > 0) { Log.Warn($"{job.Title}: terminado con {job.Errors.Count} errores"); Toast.Show("Terminado con errores", job.Title, Icons.Warning); }
                     else { Log.Ok($"{job.Title}: completado ({job.Result})"); Toast.Show("Completado", job.Title, Icons.Success); }
                 }
@@ -626,7 +629,7 @@ public static class FolderSync
             {
                 RelPath = Path.Combine(rel, name), Status = st,
                 LeftSize = a?.Length ?? -1, RightSize = b?.Length ?? -1,
-                LeftTime = a?.LastWriteTime, RightTime = b?.LastWriteTime
+                LeftTime = a?.SafeWriteTime(), RightTime = b?.SafeWriteTime()
             });
         }
         foreach (var name in ld.Keys.Union(rd.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(x => x))
@@ -638,7 +641,7 @@ public static class FolderSync
             {
                 RelPath = sub, IsDir = true, Status = a != null ? DiffStatus.OnlyLeft : DiffStatus.OnlyRight,
                 LeftSize = a != null ? 0 : -1, RightSize = b != null ? 0 : -1,
-                LeftTime = a?.LastWriteTime, RightTime = b?.LastWriteTime
+                LeftTime = a?.SafeWriteTime(), RightTime = b?.SafeWriteTime()
             });
         }
     }

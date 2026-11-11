@@ -8,12 +8,14 @@ using static DiskStudio.Views.UI;
 
 namespace DiskStudio.Views;
 
-public class CloneView : UserControl, ISnapshotDemo
+public partial class CloneView : UserControl, ISnapshotDemo
 {
     public Task Demo(string action)
     {
         var d0 = AppState.Disks.FirstOrDefault(d => d.IsSystem) ?? AppState.Disks.FirstOrDefault();
         if (action == "gpt") Prepare("gpt", AppState.Disks.LastOrDefault());
+        else if (action == "mount") { tabs["mount"].IsChecked = true; return Task.CompletedTask; }
+        else if (action == "image") { Prepare("image", AppState.Disks.LastOrDefault()); return Task.CompletedTask; }
         else Prepare("disk", d0);
         if (action == "disk" && body.Content is FrameworkElement fe)
             foreach (var cb in FindAll<ComboBox>(fe).Where(c => c.Items.Count == 3 && c.Items[0] is string s && s.StartsWith("Igual"))) cb.SelectedIndex = 1;
@@ -47,11 +49,11 @@ public class CloneView : UserControl, ISnapshotDemo
         builders = new()
         {
             ["files"] = FilesPanel, ["image"] = ImagePanel, ["restore"] = RestorePanel,
-            ["disk"] = DiskPanel, ["gpt"] = GptPanel, ["verify"] = VerifyPanel, ["surface"] = SurfacePanel
+            ["disk"] = DiskPanel, ["gpt"] = GptPanel, ["verify"] = VerifyPanel, ["surface"] = SurfacePanel, ["mount"] = MountPanel
         };
         var seg = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (key, glyph, text) in new[] { ("files", Icons.Folder, "Clonar archivos"), ("image", Icons.Image, "Crear imagen"), ("restore", Icons.Download, "Restaurar imagen"),
-                                                   ("disk", Icons.Clone, "Clonar disco"), ("gpt", Icons.Swap, "MBR ↔ GPT"), ("verify", Icons.Check, "Verificar imagen"), ("surface", Icons.Grid, "Superficie") })
+        foreach (var (key, glyph, text) in new[] { ("files", Icons.Folder, "Clonar archivos"), ("image", Icons.Image, "Crear imagen"), ("restore", Icons.Download, "Restaurar"),
+                                                   ("disk", Icons.Clone, "Clonar disco"), ("gpt", Icons.Swap, "MBR ↔ GPT"), ("verify", Icons.Check, "Verificar"), ("mount", Icons.Layers, "Montar y convertir"), ("surface", Icons.Grid, "Superficie") })
         {
             var rb = new RadioButton { Style = S("SegmentItem"), Tag = glyph, Content = text, GroupName = "clone" };
             string k = key;
@@ -224,14 +226,44 @@ public class CloneView : UserControl, ISnapshotDemo
         var disk = DiskCombo();
         var file = new TextBox();
         var compress = new CheckBox { Content = "Comprimir (.img.gz) — ocupa menos, sobre todo si el disco tiene mucho espacio vacío", Margin = new Thickness(0, 0, 0, 14) };
+        var full = new RadioButton { Style = S("SegmentItem"), Tag = Icons.Image, Content = "Completa", GroupName = "imgmode", IsChecked = true };
+        var inc = new RadioButton { Style = S("SegmentItem"), Tag = Icons.Layers, Content = "Incremental", GroupName = "imgmode" };
+        var parent = new TextBox();
+        var parentInfo = Text("", "Caption", margin: new Thickness(0, 4, 0, 0)).Also(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; });
+        var parentField = Field("Imagen anterior (completa o incremental) del mismo disco", PathPicker(parent, () => Dialogs.PickFile("Imágenes de Disk Studio Suite|*.img;*.img.gz;*.dssinc", "Elegir la imagen anterior")));
+        ((Panel)parentField).Children.Add(parentInfo);
+        parentField.Visibility = Visibility.Collapsed;
         void suggest()
         {
             if (disk.SelectedItem is not DiskOption o) return;
+            if (inc.IsChecked == true)
+            {
+                string pf = parent.Text.Trim();
+                if (File.Exists(pf))
+                {
+                    string stem = Path.GetFileName(pf);
+                    foreach (var e in new[] { IncrementalImage.Ext, ".gz", ".img" }) if (stem.EndsWith(e, StringComparison.OrdinalIgnoreCase)) stem = stem[..^e.Length];
+                    int k = stem.IndexOf("_inc", StringComparison.Ordinal); if (k > 0) stem = stem[..k];
+                    file.Text = Path.Combine(Path.GetDirectoryName(pf)!, $"{stem}_inc{DateTime.Now:yyyyMMdd-HHmm}{IncrementalImage.Ext}");
+                    try
+                    {
+                        var chain = IncrementalImage.Chain(pf);
+                        parentInfo.Text = $"Cadena: {chain.Count} imagen(es), desde «{Path.GetFileName(chain[0])}». Solo se guardarán los bloques de 1 MiB que hayan cambiado." +
+                            (File.Exists(IncrementalImage.BlocksFile(pf)) ? "" : " La imagen anterior no tiene índice de bloques: se calculará primero (tarda lo mismo que leerla).");
+                    }
+                    catch (Exception ex) { parentInfo.Text = ex.Message; }
+                }
+                else parentInfo.Text = "Elige la última imagen que hiciste de este disco.";
+                return;
+            }
             var ext = AppState.Volumes.FirstOrDefault(v => v.Ready && v.DiskNumber != o.Disk.Number && v.Free > 0 && !v.IsSystem) ?? AppState.Volumes.First(v => v.Ready);
             string name = $"Disco{o.Disk.Number}_{new string(o.Disk.Title.Where(char.IsLetterOrDigit).Take(24).ToArray())}_{DateTime.Now:yyyyMMdd}.img" + (compress.IsChecked == true ? ".gz" : "");
             file.Text = Path.Combine(ext.Root, name);
         }
         disk.SelectionChanged += (_, _) => suggest();
+        parent.TextChanged += (_, _) => suggest();
+        full.Checked += (_, _) => { parentField.Visibility = Visibility.Collapsed; compress.Visibility = Visibility.Visible; suggest(); };
+        inc.Checked += (_, _) => { parentField.Visibility = Visibility.Visible; compress.Visibility = Visibility.Collapsed; suggest(); };
         compress.Checked += (_, _) => { if (!file.Text.EndsWith(".gz")) file.Text += ".gz"; };
         compress.Unchecked += (_, _) => { if (file.Text.EndsWith(".gz")) file.Text = file.Text[..^3]; };
         suggest();
@@ -248,14 +280,22 @@ public class CloneView : UserControl, ISnapshotDemo
             if (vol?.FileSystem == "FAT32" && o.Disk.Size > uint.MaxValue)
             { await Dialogs.Error("FAT32 no admite archivos de más de 4 GB", "Elige un destino NTFS o exFAT."); return; }
             Directory.CreateDirectory(Path.GetDirectoryName(f)!);
-            TransferQueue.Enqueue(DiskImage.CreateImageJob(o.Disk, f, compress.IsChecked == true));
+            if (inc.IsChecked == true)
+            {
+                string pf = parent.Text.Trim();
+                if (!File.Exists(pf)) { await Dialogs.Error("Falta la imagen anterior", "Elige la última imagen que hiciste de este disco."); return; }
+                TransferQueue.Enqueue(IncrementalImage.CreateJob(o.Disk, pf, f));
+            }
+            else TransferQueue.Enqueue(DiskImage.CreateImageJob(o.Disk, f, compress.IsChecked == true));
             MainWindow.Instance.Navigate("transfers");
         }, "PrimaryButton").Also(b => b.HorizontalAlignment = HorizontalAlignment.Left);
 
         return Panel(Icons.Image, "Crear imagen de disco", "Copia sector a sector de un disco completo en un archivo .img (con su hash SHA-256). Solo lee el disco de origen.",
             AdminNotice(),
             Field("Disco de origen", disk),
-            Field("Archivo de imagen", PathPicker(file, () => Dialogs.SaveFile("Imagen de disco|*.img;*.img.gz", Path.GetFileName(file.Text), Path.GetDirectoryName(file.Text)))),
+            Row(Seg(full, inc), InfoBtn("Imagen completa o incremental", IncInfo)).Also(r => r.Margin = new Thickness(0, 0, 0, 14)),
+            parentField,
+            Field("Archivo de imagen", PathPicker(file, () => Dialogs.SaveFile("Imagen de disco|*.img;*.img.gz;*.dssinc", Path.GetFileName(file.Text), Path.GetDirectoryName(file.Text)))),
             compress, go);
     }
 
@@ -272,18 +312,18 @@ public class CloneView : UserControl, ISnapshotDemo
             if (!File.Exists(f)) { await Dialogs.Error("Imagen no encontrada", f); return; }
             if (o.Disk.Volumes.Any(v => f.StartsWith(v.Root, StringComparison.OrdinalIgnoreCase))) { await Dialogs.Error("No permitido", "La imagen está dentro del disco de destino."); return; }
             long len = new FileInfo(f).Length;
-            if (!f.EndsWith(".gz") && len > o.Disk.Size) { await Dialogs.Error("Disco demasiado pequeño", $"La imagen ocupa {Fmt.Size(len)} y el disco {Fmt.Size(o.Disk.Size)}."); return; }
+            if (VirtualDisk.Ext(f) is ".img" or ".iso" or ".bin" && len > o.Disk.Size) { await Dialogs.Error("Disco demasiado pequeño", $"La imagen ocupa {Fmt.Size(len)} y el disco {Fmt.Size(o.Disk.Size)}."); return; }
             if (!await Dialogs.TypeToConfirm("Se borrará el disco de destino",
-                $"Todo el contenido de «{o.Disk.Title}» ({Fmt.Size(o.Disk.Size)}" + (o.Disk.Volumes.Count > 0 ? ", unidades " + string.Join(", ", o.Disk.Volumes.Select(v => v.Letter)) : "") + ") será sustituido por la imagen. No se puede deshacer.",
+                $"Todo el contenido de «{o.Disk.Title}» ({Fmt.Size(o.Disk.Size) + (o.Disk.Volumes.Count > 0 ? ", unidades " + string.Join(", ", o.Disk.Volumes.Select(v => v.Letter)) : "")}) será sustituido por la imagen. No se puede deshacer.",
                 $"BORRAR DISCO {o.Disk.Number}", "Restaurar")) return;
             TransferQueue.Enqueue(DiskImage.RestoreJob(f, o.Disk));
             MainWindow.Instance.Navigate("transfers");
         }, "DangerButton").Also(b => b.HorizontalAlignment = HorizontalAlignment.Left);
 
-        return Panel(Icons.Download, "Restaurar imagen", "Escribe una imagen .img o .img.gz en un disco, sector a sector.",
+        return Panel(Icons.Download, "Restaurar imagen", "Escribe una imagen (.img, .img.gz, .vhd, .vhdx o incremental) en un disco, sector a sector.",
             AdminNotice(),
             Warning("Esta operación BORRA por completo el disco de destino. El disco del sistema no aparece en la lista.", true),
-            Field("Archivo de imagen", PathPicker(file, () => Dialogs.PickFile("Imagen de disco|*.img;*.gz;*.bin;*.iso|Todos|*.*"))),
+            Field("Archivo de imagen", PathPicker(file, () => Dialogs.PickFile("Imagen de disco|*.img;*.gz;*.bin;*.iso;*.vhd;*.vhdx;*.dssinc|Todos|*.*"))),
             Field("Disco de destino", disk), go);
     }
 
@@ -369,9 +409,22 @@ public class CloneView : UserControl, ISnapshotDemo
             foreach (var n in plan.Notes) notes.Children.Add(Row(Icon(Icons.Info, 12, Brushes2.Accent, new Thickness(0, 0, 8, 0)), Text(n, "Caption", 12).Also(t => t.TextTrimming = TextTrimming.None)).Also(r => r.Margin = new Thickness(0, 2, 0, 2)));
             foreach (var e in plan.Errors.Distinct()) notes.Children.Add(Row(Icon(Icons.Error, 12, Brushes2.Bad, new Thickness(0, 0, 8, 0)), Text(e, size: 12, fg: Brushes2.Bad).Also(t => t.TextTrimming = TextTrimming.None)).Also(r => r.Margin = new Thickness(0, 2, 0, 2)));
         }
-        src.SelectionChanged += (_, _) => upd(); dst.SelectionChanged += (_, _) => { userTouchedSsd = false; upd(); };
-        style.SelectionChanged += (_, _) => upd(); ssd.Click += (_, _) => upd(); snap.Click += (_, _) => upd();
-        upd();
+        int blCheck = 0;
+        async void bitlocker()
+        {
+            if (src.SelectedItem is not DiskOption a) return;
+            int id = ++blCheck;
+            var vols = a.Disk.Volumes.ToList();
+            var enc = await Task.Run(() => vols.Select(v => (v, BitLocker.Get(v.Letter))).Where(x => x.Item2.Encrypted || x.Item2.Locked).ToList());
+            if (id != blCheck || enc.Count == 0) return;
+            foreach (var (v, b) in enc)
+                notes.Children.Add(Row(Icon(Icons.Lock, 12, Brushes2.Caution, new Thickness(0, 0, 8, 0)),
+                    Text(b.Locked ? $"{v.Letter} está cifrada con BitLocker y bloqueada: desbloquéala antes de clonar." : $"{v.Letter} está cifrada con BitLocker. Guarda tu clave de recuperación; si clonas el disco del sistema, suspende la protección antes.", "Caption", 12).Also(t => { t.TextTrimming = TextTrimming.None; t.TextWrapping = TextWrapping.Wrap; t.MaxWidth = 700; }),
+                    Btn("BitLocker…", Icons.Lock, (_, _) => MainWindow.Instance.Navigate<ToolsView>("tools").Open("bitlocker", v.Root), "SecondaryButton").Also(x => { x.Margin = new Thickness(8, 0, 0, 0); x.Padding = new Thickness(8, 2, 8, 2); })).Also(r => r.Margin = new Thickness(0, 2, 0, 2)));
+        }
+        src.SelectionChanged += (_, _) => { upd(); bitlocker(); }; dst.SelectionChanged += (_, _) => { userTouchedSsd = false; upd(); };
+        style.SelectionChanged += (_, _) => { upd(); bitlocker(); }; ssd.Click += (_, _) => { upd(); bitlocker(); }; snap.Click += (_, _) => { upd(); bitlocker(); };
+        upd(); bitlocker();
 
         var go = Btn("Clonar disco", Icons.Clone, async (_, _) =>
         {
@@ -534,7 +587,7 @@ public class CloneView : UserControl, ISnapshotDemo
             hashResult.Foreground = got == expected ? Brushes2.Good : Brushes2.Bad;
         });
         return Panel(Icons.Check, "Verificar imagen", "Comprueba que una imagen coincide byte a byte con un disco, o que su hash SHA-256 es correcto.",
-            Field("Archivo de imagen", PathPicker(file, () => Dialogs.PickFile("Imagen de disco|*.img;*.gz|Todos|*.*"))),
+            Field("Archivo de imagen", PathPicker(file, () => Dialogs.PickFile("Imagen de disco|*.img;*.gz;*.vhd;*.vhdx;*.dssinc|Todos|*.*"))),
             Field("Disco a comparar", disk), hashResult, Row(go, check.Also(b => b.Margin = new Thickness(8, 0, 0, 0))));
     }
 

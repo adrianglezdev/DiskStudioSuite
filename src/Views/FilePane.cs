@@ -393,7 +393,7 @@ public class FilePane : Border
             list.Add(new FileItem
             {
                 Name = e.Name, FullPath = e.FullName, IsDir = isDir,
-                Size = e is FileInfo f ? f.Length : 0, Modified = e.LastWriteTime,
+                Size = e is FileInfo f ? f.Length : 0, Modified = e.SafeWriteTime(),
                 Type = isDir ? "Carpeta" : ShellIcons.TypeName(e.Extension),
                 Hidden = (e.Attributes & FileAttributes.Hidden) != 0
             });

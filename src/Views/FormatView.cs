@@ -234,7 +234,7 @@ public class FormatView : UserControl, ISnapshotDemo
         {
             var d = t.Disk;
             targetInfo.Text = $"{d.Partitions.Count} partición(es) · tabla {d.PartitionStyle} · {d.Bus}" + (d.Media != "" ? $" · {d.Media}" : "");
-            warnText.Text = $"Se borrarán TODAS las particiones y datos del disco {d.Number} «{d.Title}» ({Fmt.Size(d.Size)}" + (d.Volumes.Count > 0 ? ", unidades " + string.Join(", ", d.Volumes.Select(v => v.Letter)) : "") + ").";
+            warnText.Text = $"Se borrarán TODAS las particiones y datos del disco {d.Number} «{d.Title}» ({Fmt.Size(d.Size) + (d.Volumes.Count > 0 ? ", unidades " + string.Join(", ", d.Volumes.Select(v => v.Letter)) : "")}).";
         }
         var o = Options();
         var probs = Formatter.Problems(Size, o, t.Disk?.SectorSize ?? 512);

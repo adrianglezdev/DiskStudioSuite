@@ -8,6 +8,8 @@ public partial class App : Application
 {
     protected override async void OnStartup(StartupEventArgs e)
     {
+        L.Init(Environment.GetEnvironmentVariable("DSS_LANG") ?? Settings.Current.Language);
+        L.Hook();
         ApplyTheme(Settings.Current.Theme);
         Brand.Hook();
         DispatcherUnhandledException += OnError;
@@ -27,8 +29,20 @@ public partial class App : Application
         }
         bool snapshots = Environment.GetEnvironmentVariable("DSS_SNAP") != null;
         string splashSnap = Environment.GetEnvironmentVariable("DSS_SPLASHSNAP");
+        bool background = e.Args.Contains("--segundo-plano");
+        bool verbs = e.Args.Any(a => a is "--copiar" or "--hash" or "--espacio");
+        if (!snapshots && splashSnap == null)
+        {
+            if (!SingleInstance.Claim(e.Args.Contains("--reinicio")))
+            {
+                // Ya hay una ventana abierta: pasarle la petición
+                SingleInstance.Forward(e.Args.Length > 0 ? e.Args : ["--mostrar"]);
+                Shutdown(); return;
+            }
+            SingleInstance.Listen(Dispatcher);
+        }
         SplashWindow splash = null;
-        if (!snapshots && !e.Args.Contains("--sin-presentacion"))
+        if (!snapshots && !background && !verbs && !e.Args.Contains("--sin-presentacion"))
         {
             splash = new SplashWindow();
             splash.Show();
@@ -43,9 +57,36 @@ public partial class App : Application
         }
         ShutdownMode = ShutdownMode.OnMainWindowClose;
         main.Loaded += (_, _) => Brand.Apply(Brand.IsDark(Settings.Current.Theme));
-        main.Show();
-        main.Activate();
+        DiskMonitor.Start();
+        if (background)
+        {
+            new System.Windows.Interop.WindowInteropHelper(main).EnsureHandle();
+            TrayIcon.Ensure();
+        }
+        else
+        {
+            main.Show();
+            main.Activate();
+            if (Settings.Current.CloseToTray) TrayIcon.Ensure();
+        }
         splash?.Close();
+        if (verbs) main.HandleArgs(e.Args);
+        if (snapshots) return;
+        // Mantener al día las rutas del ejecutable (por si se ha movido)
+        try { if (Settings.Current.ExplorerMenu) ShellIntegration.SetExplorerMenu(true); if (Settings.Current.StartWithWindows) ShellIntegration.SetAutostart(true); } catch { }
+        if (Settings.Current.CheckUpdates && (Settings.Current.LastUpdateCheck is not DateTime last || (DateTime.Now - last).TotalHours > 20))
+            _ = CheckUpdatesLater();
+    }
+
+    static async Task CheckUpdatesLater()
+    {
+        await Task.Delay(8000);
+        try
+        {
+            var u = await Updates.Check();
+            if (u != null) { Log.Info($"Hay una versión nueva de Disk Studio Suite: {u.Tag}"); Toast.Show("Hay una versión nueva", $"Disk Studio Suite {u.Tag} está disponible. Descárgala desde Ajustes.", Icons.Update); }
+        }
+        catch (Exception ex) { Log.Info("No se pudo comprobar si hay actualizaciones: " + ex.Message); }
     }
 
     /// <summary>Diagnóstico: lista los recursos del tema cuyo color es azulado (acento de Windows sin sustituir).</summary>
@@ -100,6 +141,7 @@ public partial class App : Application
     {
         Settings.Save();
         AutoTasks.Save();
+        TrayIcon.Remove();
         base.OnExit(e);
     }
 }

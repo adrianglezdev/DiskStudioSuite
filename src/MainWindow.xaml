@@ -21,13 +21,15 @@
 
             <StackPanel DockPanel.Dock="Top" x:Name="Nav">
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xE80F;" Content="Discos" x:Name="NavDisks" IsChecked="True" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE81E;" Content="Particiones" x:Name="NavPartitions" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xE8B7;" Content="Explorador" x:Name="NavExplorer" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xE8C8;" Content="Transferencias" x:Name="NavTransfers" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xE895;" Content="Sincronizar" x:Name="NavSync" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xE7C4;" Content="Clonar e imágenes" x:Name="NavClone" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xEDA2;" Content="Formatear" x:Name="NavFormat" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xE88E;" Content="USB de arranque" x:Name="NavBoot" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xE9F5;" Content="Herramientas" x:Name="NavTools" Checked="OnNav"/>
-                <RadioButton Style="{StaticResource NavItem}" Tag="&#xF0E3;" Content="Tareas automáticas" x:Name="NavTasks" Checked="OnNav"/>
+                <RadioButton Style="{StaticResource NavItem}" Tag="&#xF0E3;" Content="Copias y tareas" x:Name="NavTasks" Checked="OnNav"/>
                 <RadioButton Style="{StaticResource NavItem}" Tag="&#xEA37;" Content="Registro" x:Name="NavLog" Checked="OnNav"/>
             </StackPanel>
 

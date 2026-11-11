@@ -15,5 +15,6 @@ public static class Icons
         Moon = "", Ssd = "", Hdd = "", Wrench = "", Fingerprint = "", Zip = "",
         Thermometer = "", Clone = "", Menu = "", Clock = "", Image = "", Tasks = "",
         Compare = "", Grid = "", Log = "", Chevron = "", More = "", Eye = "",
-        Duplicate = "", Wipe = "", Properties = "", Tag = "", Layers = "", Undo = "";
+        Duplicate = "", Wipe = "", Properties = "", Tag = "", Layers = "", Undo = "",
+        Globe = "", Bell = "", Update = "", Calendar = "";
 }
