@@ -8,6 +8,12 @@ public partial class App : Application
 {
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // Desinstalación: quitar el inicio con Windows y el menú del Explorador, y salir
+        if (e.Args.Contains("--limpiar-integracion"))
+        {
+            try { ShellIntegration.SetAutostart(false); ShellIntegration.SetExplorerMenu(false); Settings.Current.StartWithWindows = false; Settings.Current.ExplorerMenu = false; Settings.Save(); } catch { }
+            Shutdown(); return;
+        }
         L.Init(Environment.GetEnvironmentVariable("DSS_LANG") ?? Settings.Current.Language);
         L.Hook();
         ApplyTheme(Settings.Current.Theme);
@@ -72,19 +78,26 @@ public partial class App : Application
         splash?.Close();
         if (verbs) main.HandleArgs(e.Args);
         if (snapshots) return;
+        if (e.Args.Contains("--actualizado"))
+        {
+            Log.Ok($"Disk Studio Suite actualizado a la versión {Updates.Current.ToString(3)}");
+            Toast.Show("Actualización completada", $"Ya tienes Disk Studio Suite {Updates.Current.ToString(3)}.", Icons.Success);
+            _ = Task.Run(Updater.CleanupOld);
+        }
         // Mantener al día las rutas del ejecutable (por si se ha movido)
         try { if (Settings.Current.ExplorerMenu) ShellIntegration.SetExplorerMenu(true); if (Settings.Current.StartWithWindows) ShellIntegration.SetAutostart(true); } catch { }
-        if (Settings.Current.CheckUpdates && (Settings.Current.LastUpdateCheck is not DateTime last || (DateTime.Now - last).TotalHours > 20))
-            _ = CheckUpdatesLater();
+        bool testFeed = Environment.GetEnvironmentVariable("DSS_UPDATE_FEED") != null;
+        if (testFeed || (Settings.Current.CheckUpdates && (Settings.Current.LastUpdateCheck is not DateTime last || (DateTime.Now - last).TotalHours > 20)))
+            _ = CheckUpdatesLater(testFeed ? 1500 : 8000);
     }
 
-    static async Task CheckUpdatesLater()
+    static async Task CheckUpdatesLater(int delay)
     {
-        await Task.Delay(8000);
+        await Task.Delay(delay);
         try
         {
             var u = await Updates.Check();
-            if (u != null) { Log.Info($"Hay una versión nueva de Disk Studio Suite: {u.Tag}"); Toast.Show("Hay una versión nueva", $"Disk Studio Suite {u.Tag} está disponible. Descárgala desde Ajustes.", Icons.Update); }
+            if (u != null) { Log.Info($"Hay una versión nueva de Disk Studio Suite: {u.Tag}"); await Views.UpdateUi.OnFound(u); }
         }
         catch (Exception ex) { Log.Info("No se pudo comprobar si hay actualizaciones: " + ex.Message); }
     }

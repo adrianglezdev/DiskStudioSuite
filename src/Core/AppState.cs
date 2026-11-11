@@ -33,6 +33,9 @@ public class Settings
     public DateTime? LastUpdateCheck { get; set; }
     public bool ExplorerMenu { get; set; }
     public bool TrayHintShown { get; set; }
+    public bool? UpdatePrerelease { get; set; }          // null = automático (sí mientras sea 0.x)
+    public bool AutoInstallUpdates { get; set; }
+    public string SkippedVersion { get; set; } = "";
 
     static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Disk Studio Suite");
     static string FilePath => Path.Combine(Dir, "settings.json");
@@ -86,9 +89,13 @@ public static class Log
 {
     public static ObservableCollection<LogEntry> Entries { get; } = [];
 
+    /// <summary>Diagnóstico (DSS_LOG_FILE=archivo): copia el registro en un archivo de texto.</summary>
+    static readonly string LogFile = Environment.GetEnvironmentVariable("DSS_LOG_FILE");
+
     public static void Write(string text, LogKind kind = LogKind.Info)
     {
         text = L.T(text);
+        if (LogFile != null) try { lock (LogFile) File.AppendAllText(LogFile, $"{DateTime.Now:HH:mm:ss.fff}	{kind}	{text}{Environment.NewLine}"); } catch { }
         void add()
         {
             Entries.Insert(0, new LogEntry { Kind = kind, Text = text });

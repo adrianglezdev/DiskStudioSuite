@@ -1,4 +1,4 @@
-# Pruebas de integración de Disk Studio Suite sobre DISCOS VIRTUALES (VHDX) temporales.
+﻿# Pruebas de integración de Disk Studio Suite sobre DISCOS VIRTUALES (VHDX) temporales.
 # No toca ningún disco real: crea los VHDX, los usa y los borra. Requiere administrador.
 # Cada disco se comprueba antes de usarlo: si no es virtual o no tiene el tamaño esperado, la prueba se detiene.
 param([string]$Log = "$env:TEMP\dss-vhd-tests.log")

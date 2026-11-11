@@ -2,6 +2,29 @@
 
 Todas las versiones de Disk Studio Suite. El flujo de publicación usa la sección de cada versión como texto de su *release*.
 
+## [0.3.0] - 2026-11-11
+
+Llegan el instalador y la actualización desde la propia app.
+
+### Nuevo
+- **Instalador** (`DiskStudioSuite-Setup-X.Y.Z.exe`): se instala por usuario, sin necesidad de administrador, en `%LOCALAPPDATA%\Programs\Disk Studio Suite`.
+  - Crea un acceso en el menú Inicio y, si quieres, otro en el escritorio, y aparece en «Aplicaciones instaladas».
+  - Al desinstalar, quita el inicio con Windows y el menú del Explorador, y pregunta si quieres borrar tus ajustes.
+  - La versión portable de un solo archivo se sigue publicando.
+- **Actualización desde la app**:
+  - Al encontrar una versión nueva, muestra sus novedades con los botones *Actualizar ahora*, *Más tarde* y *Omitir esta versión*.
+  - Descarga con barra de progreso, velocidad y opción de cancelar, y comprueba el SHA-256 con `SHA256SUMS.txt` antes de instalar nada.
+  - Si la app está instalada, ejecuta el instalador en silencio. Si es la portable, sustituye su propio ejecutable y vuelve atrás si algo falla. En los dos casos se vuelve a abrir ya actualizada.
+  - Si hay operaciones en la cola, espera a que terminen.
+- **Ajustes de actualización**: instalar las actualizaciones automáticamente e incluir o no las versiones en pruebas. Además, Ajustes indica si usas la versión instalada o la portable.
+
+### Pruebas
+- `tests/update-e2e.ps1` prueba de principio a fin, sin administrador:
+  - la actualización de la versión portable;
+  - la instalación;
+  - la actualización de la versión instalada;
+  - la desinstalación.
+
 ## [0.2.1] - 2026-11-11
 
 Correcciones encontradas al probar todas las funciones de bajo nivel sobre discos virtuales.

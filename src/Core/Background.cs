@@ -132,34 +132,52 @@ public static class DiskMonitor
 
 // ═══════════════════════════ Actualizaciones ═══════════════════════════
 
-public record UpdateInfo(Version Version, string Tag, string Url, string Notes, bool Prerelease);
+public record ReleaseAsset(string Name, string Url, long Size);
+public record UpdateInfo(Version Version, string Tag, string Url, string Notes, bool Prerelease, List<ReleaseAsset> Assets = null);
 
 public static class Updates
 {
     public const string Repo = "adrianglezdev/DiskStudioSuite";
     public static Version Current => typeof(Updates).Assembly.GetName().Version ?? new Version(0, 0, 0);
     public static UpdateInfo Available { get; private set; }
+    public static event Action<UpdateInfo> Found;
+
+    /// <summary>Incluir versiones en pruebas: según el ajuste o, si no se ha elegido, solo mientras se use una 0.x.</summary>
+    public static bool IncludePrerelease => Settings.Current.UpdatePrerelease ?? Current.Major == 0;
 
     /// <summary>Consulta las releases públicas de GitHub. No envía ningún dato del equipo.</summary>
     public static async Task<UpdateInfo> Check()
     {
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("DiskStudioSuite-UpdateCheck");
-        http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        string json = await http.GetStringAsync($"https://api.github.com/repos/{Repo}/releases?per_page=15");
+        string json;
+        // Pruebas: DSS_UPDATE_FEED apunta a un JSON local con el mismo formato que la API de GitHub
+        if (Environment.GetEnvironmentVariable("DSS_UPDATE_FEED") is string feed && File.Exists(feed)) json = await File.ReadAllTextAsync(feed);
+        else
+        {
+            using var http = Http();
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            json = await http.GetStringAsync($"https://api.github.com/repos/{Repo}/releases?per_page=15");
+        }
         Settings.Current.LastUpdateCheck = DateTime.Now;
         Settings.Save();
-        var best = Pick(json, Current);
+        var best = Pick(json, Current, IncludePrerelease);
         Available = best;
+        if (best != null) Found?.Invoke(best);
         return best;
     }
 
-    /// <summary>Elige la versión más alta que sea más nueva que la actual (las pre-release solo si ya usas una 0.x).</summary>
-    public static UpdateInfo Pick(string json, Version current)
+    public static HttpClient Http(TimeSpan? timeout = null)
+    {
+        var http = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(15) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("DiskStudioSuite-UpdateCheck");
+        return http;
+    }
+
+    /// <summary>Elige la versión más alta que sea más nueva que la actual.</summary>
+    public static UpdateInfo Pick(string json, Version current, bool? includePre = null)
     {
         using var doc = JsonDocument.Parse(json);
         UpdateInfo best = null;
-        bool allowPre = current.Major == 0;
+        bool allowPre = includePre ?? current.Major == 0;
         foreach (var r in doc.RootElement.EnumerateArray())
         {
             if (r.TryGetProperty("draft", out var dr) && dr.GetBoolean()) continue;
@@ -170,7 +188,11 @@ public static class Updates
             v = new Version(v.Major, v.Minor, Math.Max(0, v.Build));
             var cur = new Version(current.Major, current.Minor, Math.Max(0, current.Build));
             if (v <= cur || (best != null && v <= best.Version)) continue;
-            best = new UpdateInfo(v, tag, r.GetProperty("html_url").GetString() ?? $"https://github.com/{Repo}/releases", r.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "", pre);
+            var assets = new List<ReleaseAsset>();
+            if (r.TryGetProperty("assets", out var arr))
+                foreach (var x in arr.EnumerateArray())
+                    assets.Add(new ReleaseAsset(x.GetProperty("name").GetString() ?? "", x.GetProperty("browser_download_url").GetString() ?? "", x.TryGetProperty("size", out var sz) ? sz.GetInt64() : 0));
+            best = new UpdateInfo(v, tag, r.GetProperty("html_url").GetString() ?? $"https://github.com/{Repo}/releases", r.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "", pre, assets);
         }
         return best;
     }

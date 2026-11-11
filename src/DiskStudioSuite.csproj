@@ -11,7 +11,7 @@
     <RootNamespace>DiskStudio</RootNamespace>
     <AssemblyName>DiskStudioSuite</AssemblyName>
     <!-- La versión se puede sobrescribir al publicar: dotnet publish -p:Version=0.2.0 -->
-    <Version>0.2.1</Version>
+    <Version>0.3.0</Version>
     <Product>Disk Studio Suite</Product>
     <AssemblyTitle>Disk Studio Suite</AssemblyTitle>
     <Description>Gestor de discos para Windows: copias, sincronización, clonado, imágenes, formateo y salud de discos.</Description>

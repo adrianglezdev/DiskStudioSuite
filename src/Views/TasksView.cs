@@ -253,8 +253,19 @@ public class LogView : UserControl
     }
 }
 
-public class SettingsView : UserControl
+public class SettingsView : UserControl, ISnapshotDemo
 {
+    public Task Demo(string action)
+    {
+        if (action == "update")
+        {
+            string notes = "## Disk Studio Suite v0.3.1\n\nVersión de demostración para las capturas.\n\n### Novedades\n- **Instalador**: se instala por usuario, sin administrador.\n- **Actualización desde la app**, con descarga verificada por SHA-256.\n\n### Corregido\n- Montar VHD y VHDX ya muestra la letra de la unidad.\n\n---\n\nDescarga…";
+            _ = UpdateUi.Offer(new UpdateInfo(new Version(0, 3, 1), "v0.3.1", "https://example.invalid", notes, false,
+                [new ReleaseAsset(Updater.PortableName, "x", 63_500_000), new ReleaseAsset("DiskStudioSuite-Setup-0.3.1.exe", "x", 58_500_000), new ReleaseAsset(Updater.SumsName, "x", 200)]), true);
+        }
+        return Task.CompletedTask;
+    }
+
     public SettingsView()
     {
         var s = Settings.Current;
@@ -314,20 +325,24 @@ public class SettingsView : UserControl
         });
 
         // Actualizaciones
-        var updText = Text(Updates.Available != null ? $"Disponible: {Updates.Available.Tag}" : s.LastUpdateCheck is DateTime lc ? $"Última comprobación: {lc:dd/MM/yyyy HH:mm}" : "Consulta las versiones publicadas en GitHub (no envía datos del equipo).", "Caption", 12);
+        string kindText = Updater.Kind == InstallKind.Installed ? "Versión instalada" : "Versión portable";
+        var updText = Text(kindText + " · " + (Updates.Available != null ? $"Disponible: {Updates.Available.Tag}" : s.LastUpdateCheck is DateTime lc ? $"Última comprobación: {lc:dd/MM/yyyy HH:mm}" : "Consulta las versiones publicadas en GitHub (no envía datos del equipo)."), "Caption", 12);
         Button download = null;
-        download = Btn("Descargar", Icons.Download, (_, _) => Native.Open(Updates.Available?.Url ?? $"https://github.com/{Updates.Repo}/releases"), "PrimaryButton").Also(b => { b.Visibility = Updates.Available != null ? Visibility.Visible : Visibility.Collapsed; b.Margin = new Thickness(0, 0, 8, 0); });
+        download = Btn("Actualizar", Icons.Download, async (_, _) => await UpdateUi.Offer(Updates.Available, manual: true), "PrimaryButton").Also(b => { b.Visibility = Updates.Available != null ? Visibility.Visible : Visibility.Collapsed; b.Margin = new Thickness(0, 0, 8, 0); });
         var check = Btn("Buscar ahora", Icons.Update, async (_, _) =>
         {
             updText.Text = L.T("Comprobando…");
             try
             {
                 var u = await Updates.Check();
-                updText.Text = L.T(u != null ? $"Hay una versión nueva: {u.Tag}" : $"Tienes la última versión ({Updates.Current.ToString(3)}).");
+                updText.Text = L.T(kindText) + " · " + L.T(u != null ? $"Hay una versión nueva: {u.Tag}" : $"Tienes la última versión ({Updates.Current.ToString(3)}).");
                 download.Visibility = u != null ? Visibility.Visible : Visibility.Collapsed;
+                if (u != null) await UpdateUi.Offer(u, manual: true);
             }
             catch (Exception ex) { updText.Text = L.T("No se pudo comprobar: " + ex.Message); }
         }, "SecondaryButton");
+        var pre = toggle(Updates.IncludePrerelease, v => { s.UpdatePrerelease = v; });
+        var auto = toggle(s.AutoInstallUpdates, v => s.AutoInstallUpdates = v);
 
         var page = Col(
             Text("Ajustes", "PageTitle"), Text("Preferencias de Disk Studio Suite.", "PageSubtitle").Also(t => t.Margin = new Thickness(0, 4, 0, 20)),
@@ -352,6 +367,8 @@ public class SettingsView : UserControl
             Text("Integración", "SectionTitle", margin: new Thickness(0, 18, 0, 8)),
             row(Icons.External, "Menú del Explorador de Windows", "Añade «Copiar con…», «Calcular hash con…» y «Analizar espacio con Disk Studio Suite» al clic derecho.", explorer),
             row(Icons.Update, "Buscar actualizaciones al iniciar", "Una vez al día como máximo.", toggle(s.CheckUpdates, v => s.CheckUpdates = v)),
+            row(Icons.Download, "Instalar las actualizaciones automáticamente", "Al encontrar una versión nueva, la descarga, la comprueba y reinicia la app sin preguntar (nunca con operaciones en curso).", auto),
+            row(Icons.Warning, "Incluir versiones en pruebas", "Recibe también las versiones previas (pre-release), que pueden tener fallos.", pre),
             new Border { Style = S("Card"), Padding = new Thickness(18, 14, 18, 14), Margin = new Thickness(0, 0, 0, 6),
                 Child = Columns((Icon(Icons.Download, 18, B("AccentTextFillColorPrimaryBrush"), new Thickness(0, 0, 16, 0)), Auto), (Col(Text("Actualizaciones", size: 14), updText), Star), (Row(download, check), Auto)) },
             row(Icons.Health, "SMART completo", SmartCtl.Available ? "smartmontools detectado: se usa para leer todos los atributos (como administrador)." : "Instala smartmontools para ver todos los atributos SMART.",

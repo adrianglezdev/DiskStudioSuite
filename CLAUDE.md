@@ -25,14 +25,16 @@ Aplicación nativa de Windows (WPF, .NET 10, tema Fluent) para gestionar discos:
   - `PartitionEditor.cs`: operaciones del editor de particiones (WMI de almacenamiento).
   - `Versions.cs`: copias por versiones con enlaces duros y cálculo de horarios.
   - `AutoTasks.cs`: tareas (disparador por disco y programadas).
-  - `Background.cs`: historial y vigilancia de salud, actualizaciones, menú del Explorador, inicio con Windows e instancia única.
+  - `Background.cs`: historial y vigilancia de salud, comprobación de versiones, menú del Explorador, inicio con Windows e instancia única.
+  - `Updater.cs`: actualización desde la app (instalada o portable), descarga con SHA-256 y sustitución del ejecutable.
   - `Lang.cs`: traducción de la interfaz.
   - `AppState.cs`: ajustes, registro y estado.
 - `src/Views`: páginas. Unas en XAML y otras construidas por código con los ayudantes de `UI.cs`.
 - `src/Themes/Styles.xaml`: estilos y paleta.
 - `src/Lang/en.json`: diccionario español → inglés.
 - `src/TrayIcon.cs`: icono del área de notificación (Shell_NotifyIcon, sin WinForms).
-- `tests`: pruebas de los motores (`dotnet run --project tests`) y de integración en discos virtuales (`tests/vhd-tests.ps1`, como administrador).
+- `installer/DiskStudioSuite.iss`: instalador por usuario (Inno Setup 6). **No cambiar nunca su `AppId`**: es lo que hace que una versión nueva actualice la instalada. La app sabe que está instalada si la carpeta de su `.exe` coincide con `InstallLocation` en `HKCU\…\Uninstall\{AppId}_is1`.
+- `tests`: pruebas de los motores (`dotnet run --project tests`), de integración en discos virtuales (`tests/vhd-tests.ps1`, como administrador) y de instalación y actualización de principio a fin (`tests/update-e2e.ps1`, sin administrador, tras `.\build.ps1 -Release -Installer`). Los `.ps1` se guardan en UTF-8 **con BOM**: PowerShell 5 lee mal los acentos sin él.
 - `docs`: documentación y marca.
 
 ## Compilar y publicar
@@ -40,6 +42,7 @@ Aplicación nativa de Windows (WPF, .NET 10, tema Fluent) para gestionar discos:
 ```powershell
 .\build.ps1                       # Debug
 .\build.ps1 -Release              # dist\DiskStudioSuite.exe (un solo archivo, autocontenido)
+.\build.ps1 -Release -Installer   # y dist\DiskStudioSuite-Setup-X.Y.Z.exe + SHA256SUMS.txt
 dotnet run --project tests        # pruebas sin administrador
 ```
 
@@ -50,6 +53,9 @@ Las releases se generan solas en GitHub al subir una etiqueta `vX.Y.Z`: ver `.gi
 - `DSS_SNAP="carpeta;pagina1,pagina2:demo"`: la app guarda capturas de las páginas y se cierra. Las páginas con `ISnapshotDemo` admiten una acción de demostración.
 - `DSS_SPLASHSNAP=carpeta`: guarda fotogramas de la pantalla de carga.
 - `DSS_LANG=en|es`: fuerza el idioma sin tocar los ajustes.
+- `DSS_UPDATE_FEED=archivo.json`: usa una lista de versiones local (mismo formato que la API de releases de GitHub; las URL pueden ser rutas locales) y comprueba al instante.
+- `DSS_UPDATE_AUTO=1`: instala la actualización encontrada sin preguntar. La versión reabierta no hereda estas variables.
+- `DSS_LOG_FILE=archivo`: copia el registro de la app en un archivo.
 - `DSS_ACCENTDUMP=archivo`: lista los recursos del tema que siguen con el acento de Windows (diagnóstico de la paleta).
 
 ## Idiomas
@@ -65,6 +71,8 @@ Las releases se generan solas en GitHub al subir una etiqueta `vX.Y.Z`: ver `.gi
 - `--copiar <ruta>`, `--hash <ruta>`, `--espacio <ruta>`: los usa el menú del Explorador. Si la app ya está abierta, la segunda instancia le pasa los argumentos por una tubería con nombre y se cierra.
 - `--reinicio`: espera a que se cierre la instancia anterior (al reiniciar como administrador o al cambiar de idioma).
 - `--sin-presentacion`: sin pantalla de carga.
+- `--actualizado`: la abre el actualizador; muestra el aviso de actualización completada y borra el `.exe.old` de la versión portable.
+- `--limpiar-integracion`: la ejecuta el desinstalador; quita el inicio con Windows y el menú del Explorador y sale.
 
 ## Reglas de seguridad (no relajarlas)
 

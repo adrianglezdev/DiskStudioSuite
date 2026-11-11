@@ -39,6 +39,7 @@ if (args.Length >= 4 && args[0] == "--vhd")
 PlanTests.Run(Check);
 FormatTests.Run(Check);
 NewTests.Run(Check);
+UpdaterTests.Run(Check);
 string R = Path.Combine(Path.GetTempPath(), "dss-tests");
 if (Directory.Exists(R)) Directory.Delete(R, true);
 string P(string rel) => Path.Combine(R, rel);

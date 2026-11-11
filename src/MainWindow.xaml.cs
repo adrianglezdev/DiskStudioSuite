@@ -381,6 +381,9 @@ public partial class MainWindow : Window
 
     void CloseDialog(int i) => dialogTcs?.TrySetResult(i);
 
+    /// <summary>Cierra el diálogo abierto desde el código (por ejemplo, al terminar una descarga).</summary>
+    public void CloseDialogFromCode(int result) => CloseDialog(result);
+
     /// <summary>Modo de prueba: DSS_SNAP="carpeta;pagina1,pagina2" guarda capturas de cada página y cierra.</summary>
     async Task Snapshots(string spec)
     {

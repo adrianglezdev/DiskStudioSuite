@@ -44,8 +44,22 @@ jobs:
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
             -p:Version=${{ steps.ver.outputs.version }} -o dist
           Get-ChildItem dist -Exclude DiskStudioSuite.exe | Remove-Item -Recurse -Force
-          $h = (Get-FileHash dist/DiskStudioSuite.exe -Algorithm SHA256).Hash.ToLower()
-          "$h  DiskStudioSuite.exe" | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+
+      - name: Crear el instalador
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw 'No se encontró ISCC.exe' }
+          & $iscc /Q "/DAppVersion=${{ steps.ver.outputs.version }}" installer/DiskStudioSuite.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup terminó con el código $LASTEXITCODE" }
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Sumas SHA-256
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -Filter *.exe | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+          Get-Content dist/SHA256SUMS.txt
 
       - name: Crear la release
         shell: pwsh
@@ -67,7 +81,7 @@ jobs:
 
           ---
 
-          Descarga **DiskStudioSuite.exe**: un único archivo portable para Windows 10/11 de 64 bits, sin instalación.
+          Descarga **DiskStudioSuite-Setup-$ver.exe** para instalarlo (sin necesidad de administrador, con acceso en el menú Inicio y actualizaciones desde la propia app), o **DiskStudioSuite.exe** si prefieres la versión portable de un solo archivo. Ambos para Windows 10/11 de 64 bits.
 
           > Versión en pruebas: haz copia de seguridad antes de clonar, convertir o formatear discos.
 
@@ -78,4 +92,4 @@ jobs:
           $extra = @()
           if ('${{ steps.ver.outputs.prerelease }}' -eq 'true') { $extra += '--prerelease' }
           $notes | Set-Content release-notes.md -Encoding utf8
-          gh release create $tag dist/DiskStudioSuite.exe dist/SHA256SUMS.txt --title "Disk Studio Suite $tag" --notes-file release-notes.md --target ${{ github.sha }} @extra
+          gh release create $tag dist/DiskStudioSuite.exe "dist/DiskStudioSuite-Setup-$ver.exe" dist/SHA256SUMS.txt --title "Disk Studio Suite $tag" --notes-file release-notes.md --target ${{ github.sha }} @extra

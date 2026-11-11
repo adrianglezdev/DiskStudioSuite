@@ -13,11 +13,16 @@
   <a href="LICENSE">Licencia MIT</a>
 </p>
 
-> **Versión 0.2.1 · en pruebas.** Funciona, pero aún no se ha probado en muchos equipos. Haz copia de seguridad antes de clonar, convertir, particionar o formatear discos. Consulta las [novedades](CHANGELOG.md).
+> **Versión 0.3.0 · en pruebas.** Funciona, pero aún no se ha probado en muchos equipos. Haz copia de seguridad antes de clonar, convertir, particionar o formatear discos. Consulta las [novedades](CHANGELOG.md).
 
 ---
 
-Aplicación nativa de Windows 10/11 (WPF · .NET 10) con el tema Fluent de Windows 11, en modo claro u oscuro, **en español o en inglés**. Se descarga como **un único `DiskStudioSuite.exe` portable**: no necesita instalación ni tener .NET instalado, y funciona también desde un USB.
+Aplicación nativa de Windows 10/11 (WPF · .NET 10) con el tema Fluent de Windows 11, en modo claro u oscuro, **en español o en inglés**. No necesita tener .NET instalado y se descarga de dos formas:
+
+- **`DiskStudioSuite-Setup-X.Y.Z.exe`**: instalador por usuario, sin administrador. Crea un acceso en el menú Inicio y se puede desinstalar desde Windows.
+- **`DiskStudioSuite.exe`**: un único archivo portable, sin instalación, que funciona también desde un USB.
+
+Las dos versiones **se actualizan desde la propia app**. La actualización muestra las novedades, descarga la versión nueva, comprueba su SHA-256 y se reinicia actualizada.
 
 ## Funciones
 
@@ -63,6 +68,7 @@ git clone https://github.com/adrianglezdev/DiskStudioSuite.git
 cd DiskStudioSuite
 .\build.ps1                    # compilación de desarrollo
 .\build.ps1 -Release           # genera dist\DiskStudioSuite.exe
+.\build.ps1 -Release -Installer   # y además el instalador (requiere Inno Setup 6)
 dotnet run --project tests     # pruebas de los motores
 .\tests\vhd-tests.ps1          # (como administrador) pruebas sobre discos virtuales temporales
 ```
@@ -72,11 +78,11 @@ dotnet run --project tests     # pruebas de los motores
 Las versiones se generan solas con GitHub Actions al subir una etiqueta:
 
 ```powershell
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
-El flujo compila, pasa las pruebas y crea la *release* con `DiskStudioSuite.exe` y su `SHA256SUMS.txt`, usando como texto la sección de esa versión en [CHANGELOG.md](CHANGELOG.md). Las versiones `0.x` se publican como *pre-release*.
+El flujo compila, pasa las pruebas, crea el instalador con Inno Setup y publica la *release* con `DiskStudioSuite-Setup-X.Y.Z.exe`, `DiskStudioSuite.exe` y `SHA256SUMS.txt`, usando como texto la sección de esa versión en [CHANGELOG.md](CHANGELOG.md). Las versiones `0.x` se publican como *pre-release*.
 
 ## Estructura
 
@@ -86,6 +92,7 @@ El flujo compila, pasa las pruebas y crea la *release* con `DiskStudioSuite.exe`
 | `src/Views` | Interfaz. |
 | `src/Themes` | Estilos y paleta. |
 | `src/Lang` | Traducción al inglés (`en.json`). |
+| `installer` | Script del instalador (Inno Setup). |
 | `tests` | Pruebas. |
 | `docs` | Documentación y [guía de marca](docs/MARCA.md). |
 
