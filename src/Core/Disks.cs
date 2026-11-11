@@ -167,6 +167,14 @@ public static class DiskScanner
                 disks.Add(pd);
             }
 
+            // Volúmenes sin letra (EFI, recuperación, particiones ocultas): sistema de archivos y nombre por su ruta
+            var byPath = new Dictionary<string, (string fs, string label)>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (ManagementObject mv in Query(scope, "SELECT Path, FileSystem, FileSystemLabel FROM MSFT_Volume"))
+                    if (S(mv["Path"]) is { Length: > 0 } vp) byPath[vp] = (S(mv["FileSystem"]), S(mv["FileSystemLabel"]));
+            }
+            catch { }
             // Particiones y volúmenes
             foreach (ManagementObject part in Query(scope, "SELECT * FROM MSFT_Partition"))
             {
@@ -193,6 +201,9 @@ public static class DiskScanner
                     v.DiskNumber = pd.Number; v.DiskModel = pd.Model; v.Bus = pd.Bus; v.OnRemovableDisk = pd.IsRemovable;
                     pd.Volumes.Add(v);
                 }
+                else if (part["AccessPaths"] is string[] aps)
+                    foreach (var ap in aps)
+                        if (byPath.TryGetValue(ap, out var info)) { pi.FileSystem = info.fs; pi.Label = info.label; break; }
                 pd.Partitions.Add(pi);
             }
             foreach (var pd in disks) pd.Partitions.Sort((a, b) => a.Offset.CompareTo(b.Offset));

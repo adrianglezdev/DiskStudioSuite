@@ -2,6 +2,20 @@
 
 Todas las versiones de Disk Studio Suite. El flujo de publicación usa la sección de cada versión como texto de su *release*.
 
+## [0.2.1] - 2026-11-11
+
+Correcciones encontradas al probar todas las funciones de bajo nivel sobre discos virtuales.
+
+### Corregido
+- **FAT32 de más de 32 GB**: el formato se completaba, pero la tarea terminaba con error al final (fallo presente desde la 0.1.0).
+- **Imágenes de un disco en uso**: los archivos guardados justo antes de crear una imagen completa o incremental podían quedarse fuera, porque Windows aún no los había escrito en el disco. Ahora se vuelcan antes de empezar a leer.
+- **Particiones sin letra**: el editor de particiones ya muestra su sistema de archivos y su nombre (por ejemplo, en las particiones EFI y de recuperación).
+- **Montar VHD y VHDX**: la imagen se montaba, pero la app no mostraba su letra de unidad.
+
+### Pruebas
+- La prueba de integración sobre discos virtuales (`tests/vhd-tests.ps1`) cubre también el editor de particiones, la reparación, BitLocker, los programas que bloquean una unidad, la capacidad real, las imágenes incrementales, el USB de arranque, y la conversión y el montaje de imágenes.
+- Antes de escribir en un disco, la prueba comprueba que es un disco virtual con el tamaño esperado; si no lo es, se detiene.
+
 ## [0.2.0] - 2026-11-11
 
 Segunda versión en pruebas. Añade el editor de particiones, el USB de arranque, la vigilancia en segundo plano, las copias programadas con versiones y la interfaz en inglés.
@@ -39,6 +53,7 @@ Segunda versión en pruebas. Añade el editor de particiones, el USB de arranque
 - **Una sola ventana**: si la app ya está abierta, la petición se le pasa a esa ventana en lugar de abrir otra.
 - Nuevos atajos: Ctrl+1 a Ctrl+9 y Ctrl+0 siguen el orden del menú lateral.
 - La sección «Tareas automáticas» pasa a llamarse **Copias y tareas**.
+- El analizador de espacio y el explorador ya no se detienen con archivos que tienen una fecha no válida.
 
 ## [0.1.0] - 2026-11-10
 

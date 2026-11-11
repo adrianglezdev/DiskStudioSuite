@@ -181,6 +181,8 @@ public static class IncrementalImage
                 try { prev = HashStream(ps, prevSize, ctx); WriteBlocks(BlocksFile(parent), prevSize, prev); }
                 finally { cl(); }
             }
+            ctx.SetCurrent("Guardando en el disco los cambios pendientes…");
+            DiskImage.FlushVolumes(disk);
             using var src = Native.OpenRaw(disk.Device, false);
             long len = Native.GetDeviceLength(src);
             if (len != prevSize) throw new InvalidDataException($"El disco mide {Fmt.Size(len)} y la imagen anterior {Fmt.Size(prevSize)}: no corresponden al mismo disco.");

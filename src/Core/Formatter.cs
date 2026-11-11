@@ -378,10 +378,14 @@ public static class Fat32
         if (!Native.Ioctl(h, Native.FSCTL_LOCK_VOLUME)) throw new IOException("El volumen está en uso: cierra los programas o ventanas que lo estén usando.");
         Native.Ioctl(h, Native.FSCTL_DISMOUNT_VOLUME);
         long size = Native.GetDeviceLength(h);
+        // El FileStream se queda con el identificador: desmontar y desbloquear antes de cerrarlo
         using (var fs = new FileStream(h, FileAccess.ReadWrite, 0, false))
+        {
             Write(new SectorStream(fs, bps), size, bps, clusterBytes, label, hidden, ctx);
-        Native.Ioctl(h, Native.FSCTL_DISMOUNT_VOLUME);
-        Native.Ioctl(h, Native.FSCTL_UNLOCK_VOLUME);
+            fs.Flush();
+            Native.Ioctl(h, Native.FSCTL_DISMOUNT_VOLUME);
+            Native.Ioctl(h, Native.FSCTL_UNLOCK_VOLUME);
+        }
         // Marcar la partición como FAT32 (0x0C) si es MBR
         try
         {

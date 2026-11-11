@@ -13,6 +13,20 @@ public static class DiskImage
 
     public class SurfaceBlock { public long Offset; public int State; } // 0 ok, 1 lento, 2 error
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool FlushFileBuffers(SafeFileHandle h);
+
+    /// <summary>
+    /// Escribe en el disco lo que Windows aún tiene en memoria para sus volúmenes. Sin esto, una imagen leída
+    /// sector a sector justo después de guardar un archivo podría no incluirlo.
+    /// </summary>
+    public static void FlushVolumes(PhysicalDisk disk)
+    {
+        foreach (var v in disk.Volumes)
+            try { using var h = Native.OpenRaw(@"\\.\" + v.Letter.TrimEnd('\\'), true); FlushFileBuffers(h); }
+            catch (Exception ex) { Log.Warn($"No se pudo volcar {v.Letter} a disco: {ex.Message}"); }
+    }
+
     // ───────────── Crear imagen ─────────────
     public static TransferJob CreateImageJob(PhysicalDisk disk, string file, bool compress) => new()
     {
@@ -21,6 +35,8 @@ public static class DiskImage
         Glyph = Icons.Image,
         Work = ctx => Task.Run(() =>
         {
+            ctx.SetCurrent("Guardando en el disco los cambios pendientes…");
+            FlushVolumes(disk);
             using var src = OpenStream(disk.Device, false, out long len);
             ctx.SetTotal(len);
             using var sha = SHA256.Create();

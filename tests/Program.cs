@@ -4,6 +4,28 @@ using DiskStudio.Core;
 // Pruebas de los motores de Disk Studio Suite sobre carpetas temporales (no toca discos reales).
 int fails = 0;
 void Check(bool ok, string what) { Console.WriteLine((ok ? "  OK   " : "  FALLO ") + what); if (!ok) fails++; }
+// Seguridad: las pruebas de integración solo escriben en discos virtuales
+if (args.Length > 0 && args[0].StartsWith("--vhd"))
+{
+    var nums = args[0] == "--vhd2" ? new[] { args[1], args[2] } : new[] { args[1], args[2] }.Concat(args.Length >= 5 ? [args[4]] : []).ToArray();
+    var all = DiskScanner.Scan(false).disks;
+    foreach (var n in nums.Select(int.Parse))
+    {
+        var d = all.FirstOrDefault(x => x.Number == n);
+        if (d == null || d.Bus != "Virtual" || d.IsSystem || d.IsBoot)
+        {
+            Console.WriteLine($"  FALLO el disco {n} ({d?.Title ?? "no existe"}, {d?.Bus}) no es un disco virtual: no se ejecuta nada");
+            return 90;
+        }
+    }
+}
+if (args.Length >= 5 && args[0] == "--vhd2")
+{
+    try { IntegrationNew.Vhd(int.Parse(args[1]), int.Parse(args[2]), args[3], args[4], Check); }
+    catch (Exception ex) { Console.WriteLine("  FALLO excepción: " + ex); fails++; }
+    Console.WriteLine(fails == 0 ? "\nINTEGRACIÓN 0.2 SUPERADA" : $"\n{fails} PRUEBAS DE INTEGRACIÓN 0.2 FALLIDAS");
+    return fails;
+}
 if (args.Length >= 4 && args[0] == "--vhd")
 {
     try { PlanTests.Vhd(int.Parse(args[1]), int.Parse(args[2]), args[3], Check); }

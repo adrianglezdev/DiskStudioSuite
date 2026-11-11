@@ -48,8 +48,18 @@ public static class VirtualDisk
     /// <summary>Monta una ISO, VHD o VHDX. Devuelve el disco (o -1 para ISO) y las letras asignadas.</summary>
     public static MountedImage Mount(string path, bool readOnly, bool assignLetters = true)
     {
-        string script = $"$i = Mount-DiskImage -ImagePath {Q(path)} -PassThru" + (readOnly ? " -Access ReadOnly" : "") + (assignLetters ? "" : " -NoDriveLetter") + "; Start-Sleep -Milliseconds 800; $i = Get-DiskImage -ImagePath " + Q(path) + "; " +
-            "$n = -1; if ($i.StorageType -ne 1) { $n = ($i | Get-Disk).Number }; $l = ($i | Get-Volume | Where-Object DriveLetter | ForEach-Object { \"$($_.DriveLetter):\" }) -join ' '; \"DISK=$n\"; \"LETTERS=$l\"";
+        // En ISO las letras se leen de sus volúmenes; en VHD/VHDX, de las particiones del disco
+        // («Get-DiskImage | Get-Volume» solo funciona con ISO).
+        string script = $"$i = Mount-DiskImage -ImagePath {Q(path)} -PassThru" + (readOnly ? " -Access ReadOnly" : "") + (assignLetters ? "" : " -NoDriveLetter") + "; $p = " + Q(path) + "; " +
+            "$n = -1; $l = ''; " +
+            "for ($k = 0; $k -lt 30; $k++) { Start-Sleep -Milliseconds 500; $i = Get-DiskImage -ImagePath $p; " +
+            "  if ($i.StorageType -ne 1) { $d = $i | Get-Disk; $n = $d.Number; $parts = Get-Partition -DiskNumber $n -ErrorAction SilentlyContinue; " +
+            "    $l = ($parts | Where-Object { [int][char]$_.DriveLetter -ne 0 } | ForEach-Object { \"$($_.DriveLetter):\" }) -join ' ' } " +
+            "  else { $n = -1; $l = ($i | Get-Volume -ErrorAction SilentlyContinue | Where-Object DriveLetter | ForEach-Object { \"$($_.DriveLetter):\" }) -join ' ' }; " +
+            "  if ($l -or -not " + (assignLetters ? "$true" : "$false") + ") { break } " +
+            "  if ($k -eq 8 -and $n -ge 0) { if ($d.IsOffline) { Set-Disk -Number $n -IsOffline $false -ErrorAction SilentlyContinue }; " +
+            "    $parts | Where-Object { [int][char]$_.DriveLetter -eq 0 -and $_.Type -in 'Basic','IFS','FAT32','FAT32 XINT13','Unknown' -and $_.Size -gt 32MB } | ForEach-Object { try { $_ | Add-PartitionAccessPath -AssignDriveLetter -ErrorAction Stop } catch {} } } }; " +
+            "\"DISK=$n\"; \"LETTERS=$l\"";
         var (code, o) = PowerShell(script);
         if (code != 0) throw new IOException("No se pudo montar la imagen: " + LastLine(o));
         var m = new MountedImage

@@ -13,7 +13,7 @@
   <a href="LICENSE">Licencia MIT</a>
 </p>
 
-> **Versión 0.2.0 · en pruebas.** Funciona, pero aún no se ha probado en muchos equipos. Haz copia de seguridad antes de clonar, convertir, particionar o formatear discos. Consulta las [novedades](CHANGELOG.md).
+> **Versión 0.2.1 · en pruebas.** Funciona, pero aún no se ha probado en muchos equipos. Haz copia de seguridad antes de clonar, convertir, particionar o formatear discos. Consulta las [novedades](CHANGELOG.md).
 
 ---
 
@@ -72,8 +72,8 @@ dotnet run --project tests     # pruebas de los motores
 Las versiones se generan solas con GitHub Actions al subir una etiqueta:
 
 ```powershell
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 El flujo compila, pasa las pruebas y crea la *release* con `DiskStudioSuite.exe` y su `SHA256SUMS.txt`, usando como texto la sección de esa versión en [CHANGELOG.md](CHANGELOG.md). Las versiones `0.x` se publican como *pre-release*.
