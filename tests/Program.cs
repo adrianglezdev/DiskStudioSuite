@@ -4,6 +4,26 @@ using DiskStudio.Core;
 // Pruebas de los motores de Disk Studio Suite sobre carpetas temporales (no toca discos reales).
 int fails = 0;
 void Check(bool ok, string what) { Console.WriteLine((ok ? "  OK   " : "  FALLO ") + what); if (!ok) fails++; }
+// Comprobación contra las releases reales de GitHub (red): --github
+if (args.Length > 0 && args[0] == "--github")
+{
+    using var http = Updates.Http();
+    http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+    string json = http.GetStringAsync($"https://api.github.com/repos/{Updates.Repo}/releases?per_page=15").GetAwaiter().GetResult();
+    var u = Updates.Pick(json, new Version(0, 2, 1), includePre: true);
+    Check(u != null, $"desde la 0.2.1 encuentra la versión {u?.Tag}");
+    foreach (var kind in new[] { InstallKind.Portable, InstallKind.Installed })
+    {
+        var a = Updater.AssetFor(u, kind);
+        Check(a != null, $"{kind}: archivo {a?.Name} ({Fmt.Size(a?.Size ?? 0)})");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        string f = Updater.Download(u, a, null, CancellationToken.None).GetAwaiter().GetResult();
+        Check(File.Exists(f) && new FileInfo(f).Length == a.Size, $"{kind}: descargado de GitHub y SHA-256 verificado en {sw.Elapsed.TotalSeconds:0} s");
+    }
+    try { Directory.Delete(Path.Combine(Path.GetTempPath(), "DiskStudioSuite-actualizacion"), true); } catch { }
+    Console.WriteLine(fails == 0 ? "\nGITHUB SUPERADO" : $"\n{fails} FALLIDAS");
+    return fails;
+}
 // Seguridad: las pruebas de integración solo escriben en discos virtuales
 if (args.Length > 0 && args[0].StartsWith("--vhd"))
 {
