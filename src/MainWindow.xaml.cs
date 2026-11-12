@@ -44,12 +44,27 @@ public partial class MainWindow : Window
         SingleInstance.ArgsReceived += HandleArgs;
         PreviewKeyDown += OnKey;
         Closing += OnClosing;
+
+        System.Windows.Automation.AutomationProperties.SetName(MinButton, L.T("Minimizar"));
+        System.Windows.Automation.AutomationProperties.SetName(MaxButton, L.T("Maximizar"));
+        System.Windows.Automation.AutomationProperties.SetName(CloseButton, L.T("Cerrar"));
+        StateChanged += (_, _) => UpdateChrome();
+        DpiChanged += (_, _) => UpdateChrome();
+        Activated += (_, _) => CaptionButtons.Opacity = 1;
+        Deactivated += (_, _) => CaptionButtons.Opacity = 0.5;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
+        // Se añade después del de WindowChrome: los ganchos se llaman del más reciente al más antiguo, así que este decide primero
+        var hwnd = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+        // Sin WS_SYSMENU Windows deja de pintar sus propios botones, que se transparentaban bajo los de la app.
+        // El menú del sistema se sigue abriendo con clic derecho en la franja y con Alt+Espacio (ver ChromeProc).
+        const int GWL_STYLE = -16, WS_SYSMENU = 0x80000;
+        SetWindowLong(hwnd, GWL_STYLE, GetWindowLong(hwnd, GWL_STYLE) & ~WS_SYSMENU);
+        UpdateChrome();
     }
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -59,9 +74,150 @@ public partial class MainWindow : Window
         {
             int ev = wParam.ToInt32();
             if (ev is 0x8000 or 0x8004 or 0x0007) { deviceTimer.Stop(); deviceTimer.Start(); }
+            return IntPtr.Zero;
+        }
+        return ChromeProc(hwnd, msg, wParam, lParam, ref handled);
+    }
+
+    // ───────────── Barra de título propia ─────────────
+    const int ResizeBand = 4;      // franja de redimensionado que se respeta por encima de los botones
+    int maxVisual;                 // 0 normal · 1 con el ratón encima · 2 pulsado
+    bool maxPressed;
+
+    void OnMinimize(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
+    void OnMaxRestore(object sender, RoutedEventArgs e) => ToggleMaximize();
+    void OnCloseButton(object sender, RoutedEventArgs e) => Close();
+
+    void ToggleMaximize()
+    {
+        if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this); else SystemCommands.MaximizeWindow(this);
+    }
+
+    /// <summary>Ajusta la franja superior al estado de la ventana.</summary>
+    void UpdateChrome()
+    {
+        bool max = WindowState == WindowState.Maximized;
+        MaxButton.Tag = max ? "" : "";
+        System.Windows.Automation.AutomationProperties.SetName(MaxButton, L.T(max ? "Restaurar" : "Maximizar"));
+        // Maximizada, Windows saca el marco de la ventana fuera de la pantalla: se compensa para que no se recorte el contenido
+        var inset = max ? MaximizedInset() : default;
+        Root.Margin = inset;
+        if (System.Windows.Shell.WindowChrome.GetWindowChrome(this) is { } chrome)
+            chrome.CaptionHeight = Root.RowDefinitions[0].Height.Value - chrome.ResizeBorderThickness.Top + inset.Top;
+        SetMaxVisual(0);
+    }
+
+    /// <summary>Lo que sobresale la ventana maximizada del área de trabajo de su pantalla, en unidades de WPF.</summary>
+    Thickness MaximizedInset()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        var mi = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+        if (hwnd != IntPtr.Zero && GetWindowRect(hwnd, out var w) && GetMonitorInfo(MonitorFromWindow(hwnd, 2 /* el más cercano */), ref mi))
+        {
+            int l = mi.rcWork.L - w.L, t = mi.rcWork.T - w.T, r = w.R - mi.rcWork.R, b = w.B - mi.rcWork.B;
+            int limit = (int)(16 * dpi.DpiScaleX);
+            if (l >= 0 && t >= 0 && r >= 0 && b >= 0 && l <= limit && t <= limit && r <= limit && b <= limit)
+                return new Thickness(l / dpi.DpiScaleX, t / dpi.DpiScaleY, r / dpi.DpiScaleX, b / dpi.DpiScaleY);
+        }
+        // Si la medida no es fiable (ventana aún sin colocar), el grosor del marco según el sistema
+        uint d = (uint)Math.Round(dpi.PixelsPerInchX);
+        return new Thickness((GetSystemMetricsForDpi(32 /* SM_CXSIZEFRAME */, d) + GetSystemMetricsForDpi(92 /* SM_CXPADDEDBORDER */, d)) / dpi.DpiScaleX);
+    }
+
+    /// <summary>
+    /// El botón de maximizar se declara a Windows como tal (HTMAXBUTTON) para que Windows 11 muestre los diseños de acoplamiento
+    /// al pasar el ratón. A cambio deja de recibir los eventos de ratón de WPF, así que aquí se dibuja y se pulsa a mano.
+    /// </summary>
+    IntPtr ChromeProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_NCHITTEST = 0x84, WM_NCMOUSEMOVE = 0xA0, WM_NCLBUTTONDOWN = 0xA1, WM_NCLBUTTONUP = 0xA2, WM_NCLBUTTONDBLCLK = 0xA3;
+        const int WM_MOUSEMOVE = 0x200, WM_NCMOUSELEAVE = 0x2A2, WM_MOUSELEAVE = 0x2A3;
+        const int HTRIGHT = 11, HTTOP = 12, HTTOPRIGHT = 14, HTMAXBUTTON = 9;
+        const int WM_SYSCOMMAND = 0x112, SC_KEYMENU = 0xF100;
+        switch (msg)
+        {
+            case WM_SYSCOMMAND:
+                // Alt+Espacio: menú del sistema (mover, tamaño, minimizar…), que Windows ya no abre solo
+                if ((wParam.ToInt64() & 0xFFF0) != SC_KEYMENU || lParam.ToInt64() != ' ') break;
+                handled = true;
+                var dpi = VisualTreeHelper.GetDpi(this);
+                var corner0 = Root.PointToScreen(new Point(0, Root.RowDefinitions[0].Height.Value));
+                SystemCommands.ShowSystemMenu(this, new Point(corner0.X / dpi.DpiScaleX, corner0.Y / dpi.DpiScaleY));
+                break;
+            case WM_NCHITTEST:
+                if (!CaptionButtons.IsVisible || PresentationSource.FromVisual(Root) == null) break;
+                long l = lParam.ToInt64();
+                var screen = new Point((short)(l & 0xFFFF), (short)((l >> 16) & 0xFFFF));
+                if (!Inside(CaptionButtons, screen)) break;
+                if (WindowState == WindowState.Normal && ResizeMode is ResizeMode.CanResize or ResizeMode.CanResizeWithGrip)
+                {
+                    // Los botones llegan hasta el borde: se deja una franja fina para seguir pudiendo redimensionar desde arriba y desde la esquina
+                    var p = Root.PointFromScreen(screen);
+                    bool top = p.Y < ResizeBand, right = p.X >= Root.ActualWidth - ResizeBand;
+                    if (top || right)
+                    {
+                        handled = true;
+                        bool corner = (top && p.X >= Root.ActualWidth - 3 * ResizeBand) || (right && p.Y < 3 * ResizeBand);
+                        return new IntPtr(corner ? HTTOPRIGHT : top ? HTTOP : HTRIGHT);
+                    }
+                }
+                if (Inside(MaxButton, screen)) { handled = true; return new IntPtr(HTMAXBUTTON); }
+                break;
+            case WM_NCMOUSEMOVE:
+                if (wParam.ToInt32() == HTMAXBUTTON)
+                {
+                    SetMaxVisual(maxPressed ? 2 : 1);
+                    var tme = new TRACKMOUSEEVENT { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<TRACKMOUSEEVENT>(), dwFlags = 0x12 /* TME_LEAVE | TME_NONCLIENT */, hwndTrack = hwnd };
+                    TrackMouseEvent(ref tme);
+                }
+                else { maxPressed = false; SetMaxVisual(0); }
+                break;
+            case WM_MOUSEMOVE or WM_NCMOUSELEAVE or WM_MOUSELEAVE:
+                if (maxVisual != 0 || maxPressed) { maxPressed = false; SetMaxVisual(0); }
+                break;
+            case WM_NCLBUTTONDOWN or WM_NCLBUTTONDBLCLK:
+                if (wParam.ToInt32() != HTMAXBUTTON) break;
+                handled = true; maxPressed = true; SetMaxVisual(2);
+                break;
+            case WM_NCLBUTTONUP:
+                if (wParam.ToInt32() != HTMAXBUTTON) break;
+                handled = true;
+                bool click = maxPressed;
+                maxPressed = false; SetMaxVisual(0);
+                if (click) ToggleMaximize();
+                break;
         }
         return IntPtr.Zero;
     }
+
+    static bool Inside(FrameworkElement el, Point screen)
+    {
+        var p = el.PointFromScreen(screen);
+        return p.X >= 0 && p.Y >= 0 && p.X < el.ActualWidth && p.Y < el.ActualHeight;
+    }
+
+    void SetMaxVisual(int state)
+    {
+        if (state == maxVisual) return;
+        maxVisual = state;
+        if (state == 0) MaxButton.ClearValue(BackgroundProperty);
+        else MaxButton.SetResourceReference(BackgroundProperty, state == 2 ? "SubtleFillColorTertiaryBrush" : "SubtleFillColorSecondaryBrush");
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct TRACKMOUSEEVENT { public int cbSize; public uint dwFlags; public IntPtr hwndTrack; public uint dwHoverTime; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT e);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct RECT { public int L, T, R, B; }
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO mi);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int index);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hwnd, int index, int value);
 
     // ───────────── Navegación ─────────────
     static readonly Dictionary<string, Func<FrameworkElement>> factories = new()

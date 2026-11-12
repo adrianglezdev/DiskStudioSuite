@@ -3,14 +3,22 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Disk Studio Suite" Width="1440" Height="920" MinWidth="1060" MinHeight="660"
         WindowStartupLocation="CenterScreen" Icon="Assets/app.ico">
-    <Grid>
+    <!-- Sin barra de título de Windows: la franja superior es de la app (arrastre, doble clic y menú del sistema siguen funcionando) -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="30" ResizeBorderThickness="6" GlassFrameThickness="-1" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+    <Grid x:Name="Root">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="236"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
         <!-- Navegación -->
-        <DockPanel Grid.Column="0" Margin="10,6,10,12" LastChildFill="False">
+        <DockPanel Grid.Column="0" Grid.RowSpan="2" Margin="10,6,10,12" LastChildFill="False">
             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6,0,22">
                 <Image Source="Assets/logo-512.png" Width="40" Height="40" RenderOptions.BitmapScalingMode="HighQuality"/>
                 <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
@@ -58,16 +66,16 @@
         </DockPanel>
 
         <!-- Contenido -->
-        <Border Grid.Column="1" CornerRadius="12,0,0,0" BorderThickness="0"
+        <Border Grid.Column="1" Grid.Row="1" CornerRadius="12,0,0,0" BorderThickness="0"
                 Background="{DynamicResource LayerFillColorDefaultBrush}">
             <ContentControl x:Name="Host" Focusable="False"/>
         </Border>
 
         <!-- Notificaciones -->
-        <StackPanel x:Name="Toasts" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20" Width="340"/>
+        <StackPanel x:Name="Toasts" Grid.ColumnSpan="2" Grid.RowSpan="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,20,20" Width="340"/>
 
         <!-- Capa de diálogos -->
-        <Grid x:Name="DialogLayer" Grid.ColumnSpan="2" Visibility="Collapsed" Background="#66000000">
+        <Grid x:Name="DialogLayer" Grid.ColumnSpan="2" Grid.RowSpan="2" Visibility="Collapsed" Background="#66000000">
             <Border x:Name="DialogCard" Style="{StaticResource Card}" Padding="0" MinWidth="420" MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center"
                     Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
                 <Border.Effect>
@@ -88,5 +96,13 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <!-- Botones de la ventana. Van por encima de la capa de diálogos para poder minimizar o cerrar con un diálogo abierto -->
+        <StackPanel x:Name="CaptionButtons" Grid.Column="1" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
+                    WindowChrome.IsHitTestVisibleInChrome="True">
+            <Button x:Name="MinButton" Style="{StaticResource CaptionButton}" Tag="&#xE921;" ToolTip="Minimizar" Click="OnMinimize"/>
+            <Button x:Name="MaxButton" Style="{StaticResource CaptionButton}" Tag="&#xE922;" Click="OnMaxRestore"/>
+            <Button x:Name="CloseButton" Style="{StaticResource CaptionCloseButton}" Tag="&#xE8BB;" ToolTip="Cerrar" Click="OnCloseButton"/>
+        </StackPanel>
     </Grid>
 </Window>
