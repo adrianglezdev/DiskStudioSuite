@@ -22,7 +22,10 @@ public static class SmartClone
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool DeviceIoControl(SafeFileHandle h, uint code, ref long inBuf, int inSize, byte[] outBuf, int outSize, out int returned, IntPtr ov);
 
-    record PartInfo(string VolumePath, string Fs, string Letter, bool Windows, bool BootStore, uint Cluster);
+    record PartInfo(string VolumePath, string Fs, string Letter, bool Windows, bool BootStore, uint Cluster, long Used, string Label);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool GetDiskFreeSpaceEx(string dir, out ulong freeForUser, out ulong total, out ulong totalFree);
 
     /// <summary>Vista previa sin administrador (a partir de los datos de Windows).</summary>
     public static ClonePlan Preview(PhysicalDisk src, PhysicalDisk dst, SmartCloneOptions o)
@@ -30,7 +33,9 @@ public static class SmartClone
         var l = PartitionTable.FromWmi(src);
         var parts = src.Partitions.OrderBy(p => p.Offset).ToList();
         bool win(int i) => !string.IsNullOrEmpty(parts[i].Letter) && HasWindows(parts[i].Letter + "\\");
-        return PartitionTable.PlanClone(l, dst.Size, dst.SectorSize, o.Style, o.OptimizeSsd, i => parts[i].FileSystem, win, i => parts[i].IsActive && !win(i));
+        long used(int i) => !string.IsNullOrEmpty(parts[i].Letter) && parts[i].Size > 0 ? parts[i].Size - parts[i].Free : -1;
+        string name(int i) => !string.IsNullOrEmpty(parts[i].Letter) ? $"{parts[i].Letter} «{parts[i].Label}»".Replace(" «»", "") : null;
+        return PartitionTable.PlanClone(l, dst.Size, dst.SectorSize, o.Style, o.OptimizeSsd, i => parts[i].FileSystem, win, i => parts[i].IsActive && !win(i), used, name);
     }
 
     static bool HasWindows(string root) =>
@@ -65,19 +70,23 @@ public static class SmartClone
             if (string.IsNullOrEmpty(fs) && vp != null) fs = VolumeFs(vp);
             bool win = root != null && SafeCheck(() => HasWindows(root));
             bool boot = root != null && SafeCheck(() => HasBootStore(root));
-            return new PartInfo(vp, fs, letter, win, boot, cluster);
+            long used = -1;
+            if (root != null && GetDiskFreeSpaceEx(root, out _, out ulong tot, out ulong free)) used = (long)(tot - free);
+            string label = src.Partitions.FirstOrDefault(x => x.Offset == p.Offset)?.Label ?? "";
+            return new PartInfo(vp, fs, letter, win, boot, cluster, used, label);
         }).ToList();
 
         using var dh = Native.OpenRaw(dst.Device, true);
         var dstGeo = PartitionTable.Read(dh);
         var plan = PartitionTable.PlanClone(srcLayout, dstGeo.DiskSize, dstGeo.SectorSize, o.Style, o.OptimizeSsd,
-            i => info[i].Fs, i => info[i].Windows, i => info[i].BootStore);
+            i => info[i].Fs, i => info[i].Windows, i => info[i].BootStore, i => info[i].Used, i => info[i].Letter);
         foreach (var n in plan.Notes) Log.Info("Clonado: " + n);
         if (!plan.Ok) throw new InvalidOperationException(string.Join(" ", plan.Errors.Distinct()));
 
         // Instantáneas VSS y rangos a copiar
         var shadows = new List<string>();
         var copies = new List<(PartEntry target, PartEntry source, string device, List<(long off, long len)> ranges)>();
+        var fileCopies = new List<(PartEntry target, PartInfo info, string device)>();
         try
         {
             foreach (var t in plan.Target.Parts.Where(p => p.Source >= 0))
@@ -88,6 +97,18 @@ public static class SmartClone
                 string device = null;
                 List<(long, long)> ranges = null;
                 bool ntfs = pi.Fs.Equals("NTFS", StringComparison.OrdinalIgnoreCase) && pi.VolumePath != null;
+                if (t.CopyFiles)
+                {
+                    // Partición reducida: se copia archivo a archivo después de crear la tabla
+                    if (ntfs && o.UseSnapshot)
+                    {
+                        ctx.SetCurrent($"Creando instantánea de {(pi.Letter ?? "la partición " + (t.Source + 1))}…");
+                        try { var (id, dev) = CreateShadow(pi.VolumePath); shadows.Add(id); device = dev; }
+                        catch (Exception ex) { Log.Warn($"Sin instantánea para {pi.Letter ?? pi.VolumePath}: {ex.Message}. Se leerá directamente."); }
+                    }
+                    fileCopies.Add((t, pi, device));
+                    continue;
+                }
                 if (ntfs && o.UseSnapshot)
                 {
                     ctx.SetCurrent($"Creando instantánea de {(pi.Letter ?? "la partición " + (t.Source + 1))}…");
@@ -103,7 +124,7 @@ public static class SmartClone
                 ranges ??= [(0, s.Length)];
                 copies.Add((t, s, device, ranges));
             }
-            long total = copies.Sum(c => c.ranges.Sum(r => r.len));
+            long total = copies.Sum(c => c.ranges.Sum(r => r.len)) + fileCopies.Sum(f => Math.Max(0, f.info.Used));
             long full = copies.Sum(c => c.source.Length);
             ctx.SetTotal(total);
             if (total < full) Log.Info($"Se copiarán {Fmt.Size(total)} en uso de {Fmt.Size(full)} (el espacio vacío no se escribe).");
@@ -141,6 +162,14 @@ public static class SmartClone
 
             ctx.SetCurrent("Escribiendo la tabla de particiones…");
             PartitionTable.WriteLayout(dh, plan.Target);
+
+            // Particiones reducidas: formatear y copiar los archivos (desde la instantánea si la hay)
+            if (fileCopies.Count > 0)
+            {
+                PartitionTable.RefreshStorageCache();
+                Thread.Sleep(3000);
+                foreach (var (t, pi, device) in fileCopies) CopyFilesInto(ctx, dst, t, pi, device);
+            }
         }
         finally
         {
@@ -155,6 +184,107 @@ public static class SmartClone
     }
 
     static bool SafeCheck(Func<bool> f) { try { return f(); } catch { return false; } }
+
+    /// <summary>Formatea la partición reducida igual que la de origen y copia sus archivos con Robocopy.</summary>
+    static void CopyFilesInto(JobContext ctx, PhysicalDisk dst, PartEntry t, PartInfo pi, string shadowDevice)
+    {
+        string what = pi.Letter ?? $"la partición {t.Source + 1}";
+        ctx.SetCurrent($"Preparando la partición reducida para {what}…");
+        string letter = PartitionTable.AssignLetter(dst.Number, t.Offset);
+        long done = ctx.BytesDone;
+        long total = Interlocked.Read(ref ctx.Job.bytesTotal);
+        Formatter.FormatPartition(ctx, letter, t.Length, new FormatOptions { FileSystem = pi.Fs, Label = Formatter.CleanLabel(pi.Label, pi.Fs), ClusterSize = (int)pi.Cluster, Quick = true });
+        ctx.ResetProgress(total);
+        ctx.AddBytes(done);
+
+        // La instantánea (o un volumen sin letra) se abre con un enlace simbólico temporal a su raíz
+        string link = null;
+        string device = shadowDevice ?? (pi.Letter == null ? pi.VolumePath : null);
+        if (device != null)
+        {
+            link = Path.Combine(Path.GetTempPath(), $"dss-origen-{Guid.NewGuid():N}");
+            var (lc, lo) = PartitionTable.RunTool("cmd.exe", $"/c mklink /d \"{link}\" \"{device.TrimEnd('\\')}\\\"");
+            if (lc != 0 || !Directory.Exists(link))
+            {
+                link = null;
+                if (pi.Letter == null) throw new IOException($"No se pudo abrir {what} para copiar sus archivos: {lo}");
+                Log.Warn("No se pudo abrir la instantánea: " + lo + ". Se copia directamente.");
+            }
+        }
+        string from = link ?? pi.Letter + "\\";
+        string to = letter + "\\";
+        // Robocopy lee mal «"X:\"» (la barra final escapa la comilla): se pasa «X:\.»
+        static string Arg(string p) => "\"" + p.TrimEnd('\\') + "\\.\"";
+        try
+        {
+            ctx.SetCurrent($"Copiando los archivos de {what}…");
+            long startUsed = UsedBytes(to);
+            using var stop = new CancellationTokenSource();
+            long counted = 0;   // bytes de esta partición ya sumados al progreso
+            var poll = Task.Run(async () =>
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    await Task.Delay(1000);
+                    long now = Math.Max(0, UsedBytes(to) - startUsed);
+                    long target = Math.Min(now, Math.Max(0, pi.Used));
+                    long prev = Interlocked.Read(ref counted);
+                    if (target > prev) { ctx.AddBytes(target - prev); Interlocked.Exchange(ref counted, target); }
+                    ctx.SetCurrent($"Copiando los archivos de {what}: {Fmt.Size(now)} de {Fmt.Size(Math.Max(0, pi.Used))}");
+                }
+            });
+            // /COPYALL + /B: datos, atributos, fechas, permisos, propietario y auditoría · /SL /SJ: enlaces y uniones tal cual.
+            // El origen es un enlace a la instantánea: con /SL Robocopy copiaría ese enlace en vez de su contenido, así que
+            // la raíz se copia sin /SL (solo sus archivos) y cada carpeta de primer nivel por separado, ya con /SL /SJ.
+            const string common = "/COPYALL /DCOPY:DAT /B /R:1 /W:1 /NP /NFL /NDL /NJH";
+            int code = 0;
+            var outAll = new System.Text.StringBuilder();
+            void robo(string args)
+            {
+                var (c, o) = VolumeRepair.RunLive("robocopy.exe", args, ctx, _ => { });
+                code = Math.Max(code, c);
+                outAll.AppendLine(o);
+            }
+            robo($"{Arg(from)} {Arg(to)} /LEV:1 {common} /XF pagefile.sys hiberfil.sys swapfile.sys DumpStack.log.tmp");
+            foreach (var dir in new DirectoryInfo(from).EnumerateDirectories("*", new System.IO.EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = true }))
+            {
+                ctx.Check();
+                if (dir.Name is "System Volume Information" or "$RECYCLE.BIN" or "$Recycle.Bin") continue;
+                string target = Path.Combine(to, dir.Name);
+                if ((dir.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    // Carpeta de la raíz que es una unión o un enlace (p. ej. «Documents and Settings»): se recrea igual
+                    string dest = dir.LinkTarget;
+                    if (string.IsNullOrEmpty(dest)) { Log.Warn($"{what}: se omite {dir.Name} (enlace sin destino legible)"); continue; }
+                    bool junction = !Path.IsPathRooted(dest) || dest.Length > 1 && dest[1] == ':';   // las uniones apuntan a una ruta local
+                    var (lc, lo) = PartitionTable.RunTool("cmd.exe", $"/c mklink {(junction ? "/j" : "/d")} \"{target}\" \"{dest}\"");
+                    if (lc != 0) ctx.Fail(dir.FullName, "No se pudo recrear el enlace: " + lo);
+                    continue;
+                }
+                robo($"{Arg(dir.FullName)} {Arg(target)} /E /SL /SJ /MT:8 {common}");
+            }
+            string outp = outAll.ToString();
+            stop.Cancel();
+            try { poll.Wait(3000); } catch { }
+            // Completar el progreso de esta partición (Robocopy puede terminar antes de la primera medición)
+            long rest = Math.Max(0, pi.Used) - Interlocked.Read(ref counted);
+            if (rest > 0) ctx.AddBytes(rest);
+            // Robocopy: 0-7 correcto (1 = archivos copiados, 2/4 = extras o diferencias); 8 o más = errores
+            // Resumen de Robocopy en el registro (tabla final: directorios, archivos, bytes)
+            var summary = outp.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && (l.Contains(':') && System.Text.RegularExpressions.Regex.IsMatch(l, @"^\S+\s*:\s+\d") || l.Contains("ERROR"))).Take(8);
+            foreach (var l in summary) Log.Info($"Robocopy ({what}): {l}");
+            if (code >= 8) ctx.Fail(what, $"Robocopy terminó con el código {code}: algunos archivos no se pudieron copiar. " + string.Join(" ", outp.Split('\n').Where(l => l.Contains("ERROR")).Take(3).Select(l => l.Trim())));
+            long copied = Math.Max(0, UsedBytes(to) - startUsed);
+            Log.Ok($"{what}: archivos copiados en la partición reducida ({Fmt.Size(copied)}, código de Robocopy {code})");
+        }
+        finally
+        {
+            if (link != null) try { Directory.Delete(link); } catch { }
+            if (pi.Letter == null) PartitionTable.RemoveLetter(dst.Number, t.Offset, letter);
+        }
+    }
+
+    static long UsedBytes(string root) => GetDiskFreeSpaceEx(root, out _, out ulong tot, out ulong free) ? (long)(tot - free) : 0;
 
     static string VolumeFs(string vp)
     {

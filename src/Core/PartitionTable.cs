@@ -27,6 +27,9 @@ public class PartEntry
     public int Source { get; set; } = -1;
     /// <summary>Partición nueva que hay que formatear (p. ej. EFI creada al convertir).</summary>
     public string FormatAs { get; set; }
+    /// <summary>La partición se ha reducido para que quepa: se crea vacía y se copia archivo a archivo.</summary>
+    public bool CopyFiles { get; set; }
+    public long ShrunkFrom { get; set; }
     public string Role => PartitionTable.RoleOf(this);
     public long End => Offset + Length;
 }
@@ -291,7 +294,8 @@ public static class PartitionTable
     /// de forma consecutiva alineadas a 1 MiB; si no, se conservan las posiciones exactas.
     /// </summary>
     public static ClonePlan PlanClone(DiskLayout src, long targetSize, int targetSector, TableStyle? wanted, bool alignSsd,
-                                      Func<int, string> fsOf, Func<int, bool> hasWindows, Func<int, bool> isBootStore)
+                                      Func<int, string> fsOf, Func<int, bool> hasWindows, Func<int, bool> isBootStore,
+                                      Func<int, long> usedOf = null, Func<int, string> nameOf = null)
     {
         var plan = new ClonePlan();
         TableStyle style = wanted ?? src.Style;
@@ -326,6 +330,13 @@ public static class PartitionTable
 
         bool relocate = convert || alignSsd;
         var all = newParts.Concat(parts).ToList();
+        // Si en el destino no caben con sus posiciones actuales, se recolocan seguidas (y, si hace falta, se reduce una)
+        long usableEnd = targetSize - (style == TableStyle.Gpt ? MiB : 0);
+        if (!relocate && all.Any(p => p.End > usableEnd) && usedOf != null)
+        {
+            relocate = true;
+            plan.Notes.Add("Las particiones no caben en sus posiciones actuales: se colocarán seguidas, alineadas a 1 MiB.");
+        }
         long cursor = style == TableStyle.Gpt ? MiB : MiB;
         foreach (var p in all)
         {
@@ -346,6 +357,38 @@ public static class PartitionTable
             n.Offset = relocate ? AlignUp(cursor, MiB) : p.Offset;
             cursor = n.Offset + n.Length;
             t.Parts.Add(n);
+        }
+
+        // Destino algo más pequeño: reducir la partición de datos con más espacio libre, si sus datos caben con margen
+        long overflow = t.Parts.Count == 0 ? 0 : t.Parts.Max(p => p.End) - usableEnd;
+        if (overflow > 0 && relocate && usedOf != null)
+        {
+            string name(int i) => nameOf?.Invoke(i) is { Length: > 0 } nm ? nm : $"la partición {i + 1}";
+            var candidates = t.Parts.Where(p => p.Source >= 0 && RoleOf(p) == "Datos" && usedOf(p.Source) >= 0 &&
+                                                (fsOf?.Invoke(p.Source) ?? "").ToUpperInvariant() is "NTFS" or "EXFAT" or "FAT32")
+                                    .OrderByDescending(p => p.Length - usedOf(p.Source)).ToList();
+            var c = candidates.FirstOrDefault();
+            if (c == null) plan.Errors.Add("Las particiones no caben en el disco destino y ninguna se puede reducir (hace falta una partición de datos NTFS, exFAT o FAT32 con espacio libre).");
+            else
+            {
+                long used = usedOf(c.Source);
+                bool win = hasWindows?.Invoke(c.Source) == true;
+                // Margen: 5 % (mín. 32 MB) para datos; 10 % (mín. 1 GB) para Windows, cuyos enlaces duros se duplican al copiar
+                long need = used + Math.Max(used / (win ? 10 : 20), (win ? 1024 : 32) * MiB);
+                long newLen = (c.Length - overflow) / MiB * MiB;
+                if (newLen < need)
+                    plan.Errors.Add($"Para caber en el disco destino, {name(c.Source)} tendría que quedarse en {Fmt.Size(newLen)}, y sus datos ocupan {Fmt.Size(used)}. Libera espacio en ella o usa un disco más grande.");
+                else
+                {
+                    c.ShrunkFrom = c.Length; c.Length = newLen; c.CopyFiles = true;
+                    // Correr las particiones que van detrás
+                    var after = t.Parts.Where(p => p.Offset > c.Offset).OrderBy(p => p.Offset).ToList();
+                    long cur = c.End;
+                    foreach (var p in after) { p.Offset = AlignUp(cur, MiB); cur = p.End; }
+                    plan.Notes.Add($"{name(c.Source)} se reducirá de {Fmt.Size(c.ShrunkFrom)} a {Fmt.Size(newLen)} para que quepa (sus datos ocupan {Fmt.Size(used)}). Se creará de nuevo y se copiará archivo a archivo, conservando permisos, fechas y atributos. El disco de origen no se modifica.");
+                    if (win) plan.Notes.Add($"{name(c.Source)} contiene Windows. La copia archivo a archivo conserva tus datos, pero si necesitas que ese Windows arranque, es más seguro reducir antes la partición en el disco de origen con «Particiones» y clonar después.");
+                }
+            }
         }
 
         // GPT → MBR con Windows: la partición EFI pasa a ser la partición activa de arranque BIOS

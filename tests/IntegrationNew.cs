@@ -67,7 +67,14 @@ static class IntegrationNew
     /// <param name="iso">ISO de prueba con efi\boot\bootx64.efi</param>
     public static void Vhd(int ed, int rs, string iso, string work, Action<bool, string> check)
     {
-        if (iso == "auto") iso = MakeIso(work);
+        if (iso == "auto")
+        {
+            Console.WriteLine("       creando la ISO de prueba…");
+            var isoTask = Task.Run(() => MakeIso(work));
+            if (!isoTask.Wait(TimeSpan.FromMinutes(2))) { check(false, "crear la ISO de prueba (IMAPI2) no respondió en 2 minutos"); return; }
+            iso = isoTask.Result;
+            Console.WriteLine($"       ISO creada: {Fmt.Size(new FileInfo(iso).Length)}");
+        }
         void step(string name, Action a)
         {
             Console.WriteLine("== " + name);

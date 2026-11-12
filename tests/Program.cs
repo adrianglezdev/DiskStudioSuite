@@ -27,8 +27,12 @@ if (args.Length > 0 && args[0] == "--github")
 // Seguridad: las pruebas de integración solo escriben en discos virtuales
 if (args.Length > 0 && args[0].StartsWith("--vhd"))
 {
-    var nums = args[0] == "--vhd2" ? new[] { args[1], args[2] } : new[] { args[1], args[2] }.Concat(args.Length >= 5 ? [args[4]] : []).ToArray();
-    var all = DiskScanner.Scan(false).disks;
+    var nums = args[0] == "--vhd2" ? new[] { args[1], args[2] } : new[] { args[1], args[2] }.Concat(args.Length >= 5 ? [args[4]] : []).Concat(args.Length >= 6 ? [args[5]] : []).ToArray();
+    Console.WriteLine("       comprobando los discos conectados…");
+    var scanTask = Task.Run(() => DiskScanner.Scan(false).disks);
+    if (!scanTask.Wait(TimeSpan.FromMinutes(2))) { Console.WriteLine("  FALLO Windows no respondió al listar los discos en 2 minutos"); return 91; }
+    var all = scanTask.Result;
+    Console.WriteLine("       discos: " + string.Join(", ", all.Select(d => $"{d.Number} {d.Bus}")));
     foreach (var n in nums.Select(int.Parse))
     {
         var d = all.FirstOrDefault(x => x.Number == n);
@@ -48,7 +52,7 @@ if (args.Length >= 5 && args[0] == "--vhd2")
 }
 if (args.Length >= 4 && args[0] == "--vhd")
 {
-    try { PlanTests.Vhd(int.Parse(args[1]), int.Parse(args[2]), args[3], Check); }
+    try { PlanTests.Vhd(int.Parse(args[1]), int.Parse(args[2]), args[3], Check, args.Length >= 6 ? int.Parse(args[5]) : -1); }
     catch (Exception ex) { Console.WriteLine("  FALLO excepción: " + ex); fails++; }
     if (args.Length >= 5)
         try { FormatTests.Vhd(int.Parse(args[4]), Check); }

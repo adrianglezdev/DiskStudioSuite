@@ -2,6 +2,17 @@
 
 Todas las versiones de Disk Studio Suite. El flujo de publicación usa la sección de cada versión como texto de su *release*.
 
+## [0.3.1] - 2026-11-12
+
+### Corregido
+- **Clonar a un disco algo más pequeño**: antes se rechazaba con «Las particiones no caben en el disco destino», aunque los datos cupieran de sobra.
+  - Ahora se reduce la partición de datos con más espacio libre para que quepa justo, siempre que sus datos quepan con margen.
+  - Esa partición se crea de nuevo con el mismo formato, nombre y tamaño de clúster, y se copia archivo a archivo con Robocopy. Se conservan permisos, propietario, fechas, atributos, enlaces y uniones, y se lee desde la instantánea si está activada.
+  - El resto de particiones se sigue copiando sector a sector, y el disco de origen no se modifica.
+  - La vista previa explica qué partición se reduce y hasta qué tamaño.
+  - Si la partición reducida contiene Windows, avisa de que, para que arranque con seguridad, es mejor reducirla antes en el origen con «Particiones».
+- Si el destino es más pequeño, el clonado se hace siempre partición a partición, aunque no se marque «Optimizar para SSD».
+
 ## [0.3.0] - 2026-11-12
 
 Llegan el instalador y la actualización desde la propia app.

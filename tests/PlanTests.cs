@@ -53,6 +53,25 @@ static class PlanTests
         plan = PartitionTable.PlanClone(mbr, 4096 * GiB, 4096, null, true, _ => "NTFS", _ => false, _ => false);
         check(!plan.Ok, "distinto tamaño de sector: rechazado");
 
+        // Destino algo más pequeño (466 GB → 447 GB): se reduce la partición de datos si sus datos caben
+        var big = new DiskLayout { Style = TableStyle.Mbr, DiskSize = 466 * GiB, SectorSize = 512 };
+        big.Parts.Add(new PartEntry { Offset = MiB, Length = 350 * MiB, MbrType = 0x07, Active = true, Source = 0 });
+        big.Parts.Add(new PartEntry { Offset = 351 * MiB, Length = 466 * GiB - 352 * MiB, MbrType = 0x07, Source = 1 });
+        plan = PartitionTable.PlanClone(big, 447 * GiB, 512, null, true, _ => "NTFS", _ => false, i => i == 0, i => i == 0 ? 40 * MiB : 214 * GiB, i => i == 1 ? "E:" : null);
+        var shr = plan.Target.Parts.FirstOrDefault(p => p.CopyFiles);
+        check(plan.Ok && shr != null && shr.Source == 1 && plan.Target.Parts.All(p => p.End <= 447 * GiB), "466 GB → 447 GB: la partición de datos se reduce y todo cabe");
+        check(shr != null && shr.ShrunkFrom > shr.Length && shr.Length % MiB == 0 && shr.Length >= 214 * GiB, $"reducida de {Fmt.Size(shr?.ShrunkFrom ?? 0)} a {Fmt.Size(shr?.Length ?? 0)}, alineada a 1 MiB");
+        check(!plan.Target.Parts[0].CopyFiles && plan.Target.Parts[0].Length == 350 * MiB, "la partición pequeña se copia igual, sector a sector");
+        check(plan.Notes.Any(n => n.Contains("E:") && n.Contains("archivo a archivo")), "la vista previa explica qué se reduce y cómo");
+        plan = PartitionTable.PlanClone(big, 447 * GiB, 512, null, false, _ => "NTFS", _ => false, _ => false, i => i == 0 ? 40 * MiB : 214 * GiB);
+        check(plan.Ok && plan.Target.Parts.Any(p => p.CopyFiles), "sin «Optimizar para SSD» también se recoloca y se reduce");
+        plan = PartitionTable.PlanClone(big, 447 * GiB, 512, null, true, _ => "NTFS", _ => false, _ => false, i => i == 0 ? 40 * MiB : 460 * GiB);
+        check(!plan.Ok && plan.Errors.Any(e => e.Contains("ocupan")), "si los datos no caben, se rechaza explicando por qué");
+        plan = PartitionTable.PlanClone(big, 447 * GiB, 512, null, true, _ => "NTFS", i => i == 1, _ => false, i => i == 0 ? 40 * MiB : 214 * GiB);
+        check(plan.Ok && plan.Notes.Any(n => n.Contains("contiene Windows")), "si es la partición de Windows, avisa de que es más seguro reducirla en el origen");
+        plan = PartitionTable.PlanClone(big, 447 * GiB, 512, null, true, _ => "NTFS", _ => false, _ => false);
+        check(!plan.Ok, "sin saber cuánto ocupan los datos, no se reduce nada");
+
         var full = new DiskLayout { Style = TableStyle.Mbr, DiskSize = 100 * GiB, SectorSize = 512 };
         full.Parts.Add(new PartEntry { Offset = MiB, Length = 100 * GiB - MiB, MbrType = 0x07, Source = 0 });
         var errs = new List<string>();
@@ -67,7 +86,7 @@ static class PlanTests
     }
 
     // ═════════════ Integración en discos virtuales (requiere administrador) ═════════════
-    public static int Vhd(int a, int b, string hashFile, Action<bool, string> check)
+    public static int Vhd(int a, int b, string hashFile, Action<bool, string> check, int small = -1)
     {
         Console.WriteLine($"== Integración en VHD: origen disco {a}, destino disco {b}");
         var expected = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(hashFile))!;
@@ -92,8 +111,14 @@ static class PlanTests
             foreach (var (rel, hash) in expected)
             {
                 string f = Path.Combine(letter + "\\", rel);
-                if (!File.Exists(f) || Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(f))) != hash) bad++;
+                bool exists = File.Exists(f);
+                if (!exists || Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(f))) != hash)
+                {
+                    if (bad < 3) Console.WriteLine($"       {(exists ? "distinto" : "falta")}: {rel}");
+                    bad++;
+                }
             }
+            if (bad > 0) Console.WriteLine($"       {bad} de {expected.Count} con problemas; en {letter} hay {Directory.GetFiles(letter + Path.DirectorySeparatorChar, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }).Length} archivos");
             check(bad == 0, $"{tag}: {expected.Count} archivos idénticos (SHA-256) en {letter}");
             return bad == 0;
         }
@@ -124,6 +149,20 @@ static class PlanTests
 
         run(SmartClone.Job(D(a), D(b), new SmartCloneOptions { Style = null, OptimizeSsd = false, UseSnapshot = false }));
         verify(b, "clonado completo sin optimizar ni instantánea");
+
+        if (small >= 0)
+        {
+            Console.WriteLine($"== Clonar a un disco más pequeño (disco {small}, {Fmt.Size(D(small).Size)})");
+            var preview = SmartClone.Preview(D(a), D(small), new SmartCloneOptions { OptimizeSsd = true });
+            var red = preview.Target.Parts.FirstOrDefault(p => p.CopyFiles);
+            check(preview.Ok && red != null, $"vista previa: la partición de datos se reduce de {Fmt.Size(red?.ShrunkFrom ?? 0)} a {Fmt.Size(red?.Length ?? 0)}");
+            foreach (var e in preview.Errors) Console.WriteLine("       " + e);
+            run(SmartClone.Job(D(a), D(small), new SmartCloneOptions { OptimizeSsd = true, UseSnapshot = true }));
+            var sd = D(small);
+            check(sd.Partitions.Count == 2 && sd.Partitions.All(p => p.Offset + p.Size <= sd.Size), "clonado: dos particiones dentro del disco más pequeño");
+            check(sd.Partitions.Any(p => p.FileSystem == "NTFS" && p.Label == "DATOS"), "la partición reducida conserva sistema de archivos y nombre");
+            verify(small, "clonado a disco más pequeño (copia archivo a archivo desde la instantánea)");
+        }
         return 0;
     }
 }

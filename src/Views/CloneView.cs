@@ -374,7 +374,9 @@ public partial class CloneView : UserControl, ISnapshotDemo
             Style = style.SelectedIndex switch { 1 => TableStyle.Gpt, 2 => TableStyle.Mbr, _ => null },
             OptimizeSsd = ssd.IsChecked == true, UseSnapshot = snap.IsChecked == true
         };
-        bool smart() => style.SelectedIndex != 0 || ssd.IsChecked == true;
+        // Partición a partición si se cambia el formato, se optimiza o el destino es más pequeño (sector a sector no cabría)
+        bool smart() => style.SelectedIndex != 0 || ssd.IsChecked == true ||
+                        (src.SelectedItem is DiskOption sa && dst.SelectedItem is DiskOption sb && sb.Disk.Size < sa.Disk.Size);
 
         void upd()
         {

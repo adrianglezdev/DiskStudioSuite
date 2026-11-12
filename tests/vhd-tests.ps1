@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 Start-Transcript -Path $Log -Force | Out-Null
 $dir = Join-Path $env:TEMP 'dss-vhd'
 $exe = Join-Path $PSScriptRoot 'bin\Debug\net10.0-windows\EngineTests.exe'
-$vhds = [ordered]@{ origen = 700; destino = 900; fat32 = 40960; editor = 2048; restaurar = 2048 }   # MB
+$vhds = [ordered]@{ origen = 700; destino = 900; fat32 = 40960; editor = 2048; restaurar = 2048; pequeno = 450 }   # MB
 $disks = @{}
 $code = 1
 
@@ -78,8 +78,9 @@ format fs=ntfs label=DATOS quick
     $hashes | ConvertTo-Json | Set-Content $hashFile -Encoding utf8
     Write-Host "$($hashes.Count) archivos de prueba creados"
 
-    foreach ($k in 'origen', 'destino', 'fat32') { Assert-Virtual $disks[$k] $vhds[$k] }
-    & $exe --vhd $da $db $hashFile $dc
+    foreach ($k in 'origen', 'destino', 'fat32', 'pequeno') { Assert-Virtual $disks[$k] $vhds[$k] }
+    $env:DSS_LOG_FILE = Join-Path (Split-Path $Log) 'dss-app.log'
+    & $exe --vhd $da $db $hashFile $dc $disks.pequeno
     $code = $LASTEXITCODE
 
     # Funciones de la 0.2: editor de particiones, reparación, BitLocker, bloqueos, capacidad real,
