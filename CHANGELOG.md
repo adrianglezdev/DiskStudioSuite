@@ -2,7 +2,7 @@
 
 Todas las versiones de Disk Studio Suite. El flujo de publicación usa la sección de cada versión como texto de su *release*.
 
-## [0.3.0] - 2026-11-11
+## [0.3.0] - 2026-11-12
 
 Llegan el instalador y la actualización desde la propia app.
 
