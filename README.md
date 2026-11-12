@@ -13,7 +13,7 @@
   <a href="LICENSE">Licencia MIT</a>
 </p>
 
-> **Versión 0.3.1 · en pruebas.** Funciona, pero aún no se ha probado en muchos equipos. Haz copia de seguridad antes de clonar, convertir, particionar o formatear discos. Consulta las [novedades](CHANGELOG.md).
+> **Versión 0.3.2 · en pruebas.** Funciona, pero aún no se ha probado en muchos equipos. Haz copia de seguridad antes de clonar, convertir, particionar o formatear discos. Consulta las [novedades](CHANGELOG.md).
 
 ---
 

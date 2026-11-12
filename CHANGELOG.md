@@ -2,6 +2,15 @@
 
 Todas las versiones de Disk Studio Suite. El flujo de publicación usa la sección de cada versión como texto de su *release*.
 
+## [0.3.2] - 2026-11-12
+
+### Nuevo
+- **Ventana sin la barra de título de Windows**: los botones de minimizar, maximizar y cerrar pasan a estar integrados en la propia app, con su mismo estilo, y el contenido gana altura.
+  - Se sigue pudiendo arrastrar la ventana desde la franja superior, maximizarla con doble clic y redimensionarla desde cualquier borde.
+  - En Windows 11, al pasar el ratón por el botón de maximizar aparecen los diseños de acoplamiento.
+  - El menú del sistema (mover, tamaño, minimizar…) se abre con Alt+Espacio.
+  - Con un diálogo abierto se puede seguir minimizando o cerrando la ventana.
+
 ## [0.3.1] - 2026-11-12
 
 ### Corregido
